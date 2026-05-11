@@ -1,110 +1,128 @@
 import time
-from gpio_module import GPIOController
+import threading
 import RPi.GPIO as GPIO
+from gpio_module import GPIOController
 
-# Mapeamento de Pinos (Tabelas 1, 3 e 4)
 SEMAFORO_1 = [17, 18, 23]
 SEMAFORO_2 = [24, 8, 7]
 
 BOTOES = {
-    'C1_Principal': 1,
-    'C1_Travessia': 12,
-    'C2_Principal': 25,
-    'C2_Travessia': 22
+    'M1_Principal': 1,
+    'M1_Travessia': 12,
+    'M2_Principal': 25,
+    'M2_Travessia': 22,
 }
 
-SENSORES = {
-    'S1': {'A': 16, 'B': 20},
-    'S2': {'A': 21, 'B': 27},
-    'S3': {'A': 11, 'B': 0},
-    'S4': {'A': 5, 'B': 6}
-}
-
-# Variáveis de Controle Global
 gpio = GPIOController()
-tempos_sensores = {s: 0 for s in SENSORES}
-requisicao_pedestre = False
+pedestre = {k: False for k in BOTOES}
+pedestre_lock = threading.Lock()
+
 
 def atualizar_semaforo(pinos, codigo):
-    """Converte código decimal 0-7 para 3 bits nos pinos GPIO."""
     for i in range(3):
-        estado = (codigo >> i) & 1
-        gpio.set_output(pinos[i], estado)
+        gpio.set_output(pinos[i], (codigo >> i) & 1)
 
-def callback_botao(canal):
-    global requisicao_pedestre
-    print(f"Botão {canal} pressionado! Solicitando travessia...")
-    requisicao_pedestre = True
 
-def callback_sensor_A(canal):
-    for sensor, pinos in SENSORES.items():
-        if pinos['A'] == canal:
-            tempos_sensores[sensor] = time.time()
+def make_callback(nome):
+    def cb(canal):
+        with pedestre_lock:
+            pedestre[nome] = True
+        print(f"[BOTÃO] {nome} pressionado (GPIO {canal})")
+    return cb
 
-def callback_sensor_B(canal):
-    tempo_fim = time.time()
-    for sensor, pinos in SENSORES.items():
-        if pinos['B'] == canal:
-            tempo_ini = tempos_sensores[sensor]
-            if tempo_ini > 0:
-                dt = tempo_fim - tempo_ini
-                # v = (d * 3.6) / dt | d = 2m
-                velocidade = (2.0 * 3.6) / dt
-                print(f"Velocidade {sensor}: {velocidade:.2f} km/h")
-                if velocidade > 60:
-                    print(">>> ALERTA: INFRAÇÃO DETECTADA (> 60 km/h)")
-                tempos_sensores[sensor] = 0
 
-def setup_sistema():
-    # Configuração de Saídas (Semáforos)
+def consumir_pedestre(*nomes):
+    with pedestre_lock:
+        ativado = any(pedestre[n] for n in nomes)
+        for n in nomes:
+            pedestre[n] = False
+    return ativado
+
+
+def aguardar(segundos, *flags, minimo=0):
+    time.sleep(minimo)
+    inicio = time.time()
+    while time.time() - inicio < (segundos - minimo):
+        if flags and consumir_pedestre(*flags):
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def ciclo_modelo1():
+    while True:
+        # Verde: 10s, aceita pedestre após 5s mínimos
+        atualizar_semaforo(SEMAFORO_1, 0b001)
+        print("[M1] VERDE")
+        antecipado = aguardar(10, 'M1_Principal', 'M1_Travessia', minimo=5)
+        if antecipado:
+            print("[M1] Pedestre antecipou fechamento do verde")
+
+        atualizar_semaforo(SEMAFORO_1, 0b010)
+        print("[M1] AMARELO")
+        aguardar(2)
+
+        atualizar_semaforo(SEMAFORO_1, 0b100)
+        print("[M1] VERMELHO")
+        aguardar(10)
+
+
+def ciclo_modelo2():
+    while True:
+        # Estado 1: Verde Principal — mín 10s, máx 20s
+        atualizar_semaforo(SEMAFORO_2, 1)
+        print("[M2] Estado 1 — Verde Principal")
+        antecipado = aguardar(20, 'M2_Principal', minimo=10)
+        if antecipado:
+            print("[M2] Pedestre principal antecipou")
+
+        # Estado 2: Amarelo Principal
+        atualizar_semaforo(SEMAFORO_2, 2)
+        print("[M2] Estado 2 — Amarelo Principal")
+        aguardar(2)
+
+        # Estado 4: Vermelho Total
+        atualizar_semaforo(SEMAFORO_2, 4)
+        print("[M2] Estado 4 — Vermelho Total")
+        aguardar(2)
+
+        # Estado 5: Verde Cruzamento — mín 5s, máx 10s
+        atualizar_semaforo(SEMAFORO_2, 5)
+        print("[M2] Estado 5 — Verde Cruzamento")
+        antecipado = aguardar(10, 'M2_Travessia', minimo=5)
+        if antecipado:
+            print("[M2] Pedestre cruzamento antecipou")
+
+        # Estado 6: Amarelo Cruzamento
+        atualizar_semaforo(SEMAFORO_2, 6)
+        print("[M2] Estado 6 — Amarelo Cruzamento")
+        aguardar(2)
+
+        # Estado 4: Vermelho Total
+        atualizar_semaforo(SEMAFORO_2, 4)
+        print("[M2] Estado 4 — Vermelho Total")
+        aguardar(2)
+
+
+def setup():
     for pino in SEMAFORO_1 + SEMAFORO_2:
         gpio.setup_output(pino)
-
-    # Configuração de Botões com Debounce
-    for pino in BOTOES.values():
+    for nome, pino in BOTOES.items():
         gpio.setup_input(pino)
-        gpio.add_interrupt(pino, GPIO.RISING, callback_botao, bouncetime=400)
+        gpio.add_interrupt(pino, GPIO.RISING, make_callback(nome), bouncetime=400)
 
-    # Configuração de Sensores
-    for pinos in SENSORES.values():
-        gpio.setup_input(pinos['A'])
-        gpio.setup_input(pinos['B'])
-        gpio.add_interrupt(pinos['A'], GPIO.RISING, callback_sensor_A)
-        gpio.add_interrupt(pinos['B'], GPIO.RISING, callback_sensor_B)
-
-def ciclo_semaforo():
-    global requisicao_pedestre
-    while True:
-        # ESTADO: VERDE PRINCIPAL (Código 1)
-        atualizar_semaforo(SEMAFORO_1, 1)
-        print("Sinal Verde (Principal) - Aguardando...")
-        
-        # Verde dura entre 15s (min) e 30s (max)
-        for segundo in range(30):
-            time.sleep(1)
-            # Se apertarem o botão e já passou o tempo mínimo (15s), interrompe
-            if requisicao_pedestre and segundo >= 15:
-                print("Antecipando fechamento por pedestre!")
-                break
-        
-        requisicao_pedestre = False # Reseta a flag
-
-        # ESTADO: AMARELO (Código 2)
-        atualizar_semaforo(SEMAFORO_1, 2)
-        print("Sinal Amarelo - Atenção!")
-        time.sleep(3) # Tempo fixo de amarelo
-
-        # ESTADO: VERMELHO TOTAL (Código 4)
-        atualizar_semaforo(SEMAFORO_1, 4)
-        print("Sinal Vermelho - Pare!")
-        time.sleep(2)
 
 if __name__ == '__main__':
     try:
         print("Iniciando Sistema de Controle de Tráfego...")
-        setup_sistema()
-        ciclo_semaforo()
+        setup()
+        t1 = threading.Thread(target=ciclo_modelo1, daemon=True)
+        t2 = threading.Thread(target=ciclo_modelo2, daemon=True)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
     except KeyboardInterrupt:
-        print("\nEncerrando sistema...")
+        print("\nEncerrando...")
     finally:
         gpio.cleanup()
