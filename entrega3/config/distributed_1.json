@@ -1,0 +1,18 @@
+{
+  "name": "cruzamento-1",
+  "intersection_id": 1,
+  "central_host": "127.0.0.1",
+  "central_port": 9000,
+  "telemetry_interval_s": 2.0,
+  "reconnect_delay_s": 1.0,
+  "force_mock_gpio": false,
+  "semaphore_bits": [17, 18, 23],
+  "buttons": {
+    "principal": 1,
+    "travessia": 12
+  },
+  "sensors": [
+    {"id": 1, "pin_a": 16, "pin_b": 20},
+    {"id": 2, "pin_a": 21, "pin_b": 27}
+  ]
+}
