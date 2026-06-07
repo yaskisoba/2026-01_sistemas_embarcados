@@ -1,4 +1,4 @@
-# Entrega 3 — Trabalho 1 (FSE 2026/1)
+# Entrega 3 — Sistema de Controle de Trânsito (FSE 2026/1)
 
 Implementação em Python de um sistema distribuído para controle de cruzamentos com:
 
@@ -27,6 +27,7 @@ entrega3/
     distributed_2.json
   main_central.py
   main_distributed.py
+  main.py                     # Sobe central + 2 distribuídos num terminal
   requirements.txt
 ```
 
@@ -57,7 +58,7 @@ Exemplo:
 "matricula_6": "654321"
 ```
 
-A implementação envia os 6 dígitos **antes do CRC** em bytes crus e em ordem reversa, como solicitado.
+A implementação envia os 6 dígitos **antes do CRC** em bytes crus, na ordem normal (ex.: `"029088"` → `02 90 88`).
 
 ### 2) Endereços e portas
 
@@ -76,9 +77,20 @@ Nos arquivos de distribuído, use:
 
 ## Execução
 
-> Inicie em terminais separados (a ordem não importa; há reconexão automática).
+> A ordem de inicialização não importa; há reconexão automática.
 
-### Terminal 1 — Servidor Central
+### Um terminal (recomendado)
+
+```bash
+cd entrega3
+python3 main.py
+```
+
+Sobe o central e os dois distribuídos em subprocessos. Use `Ctrl+C` para encerrar tudo.
+
+### Terminais separados (alternativa)
+
+#### Terminal 1 — Servidor Central
 
 ```bash
 cd entrega3
@@ -103,8 +115,11 @@ python3 main_distributed.py --config config/distributed_2.json --log-level INFO
 
 Comandos:
 
-- `status`
+- `status` — estado consolidado (inclui `timed_out`, `unattended`, tempos do 0x20)
+- `modbus` — leitura imediata do dispositivo 0x20
+- `multas` — últimas 10 linhas de [data/multas.log](data/multas.log)
 - `night on` / `night off`
+- `emergency off` / `emergency <1|2|all> [principal|auxiliar]`
 - `manual <1|2> <0..7>`
 - `auto <1|2|all>`
 - `quit`
@@ -115,7 +130,7 @@ Comandos:
    - Temporização dos semáforos (normal, noturno e emergência)
    - Botões de pedestre com debounce
    - Sensores de velocidade por borda de subida A/B
-   - Alerta imediato de excesso de velocidade (> 60 km/h)
+   - Alerta imediato de excesso de velocidade (limiar **60 km/h**)
    - Telemetria periódica (2 s) para o central
 
 2. **Servidor Central**
@@ -147,6 +162,6 @@ Exemplo:
 
 ## Observações
 
-- O cálculo de velocidade usa $v = \frac{2}{\Delta t} \times 3{,}6$.
+- O cálculo de velocidade usa $v = \frac{d}{\Delta t} \times 3{,}6$ com **d = 2 m** (§6.1 do enunciado).
 - Para modo noturno, o distribuído alterna códigos `0` e `4` a cada 1 s.
 - Em emergência (`active=1` em 0x20), o central aplica `signal_group` no(s) cruzamento(s) afetado(s) até `active=0`.

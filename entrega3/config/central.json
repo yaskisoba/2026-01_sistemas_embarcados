@@ -4,10 +4,10 @@
   "telemetry_interval_s": 2.0,
   "rs485_port": "/dev/serial0",
   "rs485_baud": 115200,
-  "rs485_timeout_s": 0.3,
+  "rs485_timeout_s": 0.5,
   "rs485_retries": 3,
   "emergency_poll_s": 0.3,
-  "matricula_6": "654321",
+  "matricula_6": "029088",
   "camera_by_sensor": {
     "1": "0x11",
     "2": "0x12",

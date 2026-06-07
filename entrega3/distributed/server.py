@@ -17,6 +17,8 @@ from common.traffic_math import speed_kmh_from_delta
 
 log = logging.getLogger(__name__)
 
+SPEED_LIMIT_KMH = 60.0
+
 
 @dataclass
 class SensorStats:
@@ -115,11 +117,21 @@ class IntersectionController:
                 delta_s = now - sensor.last_a_ts
                 sensor.last_a_ts = None
                 speed = speed_kmh_from_delta(delta_s)
+                if speed <= 0:
+                    return
                 sensor.count_total += 1
                 sensor.count_since_last += 1
                 sensor.sum_speed_since_last += speed
 
-            if speed > 60.0:
+            log.info(
+                "[C%d] Sensor %d: veículo a %.1f km/h (total=%d)",
+                self.intersection_id,
+                sensor_id,
+                speed,
+                sensor.count_total,
+            )
+
+            if speed > SPEED_LIMIT_KMH:
                 payload = {
                     "type": "overspeed",
                     "intersection_id": self.intersection_id,
@@ -246,16 +258,29 @@ class IntersectionController:
         action = cmd.get("action")
         with self._lock:
             if action == "set_night_mode":
+                enabled = bool(cmd.get("enabled", False))
                 self._apply_set_night_mode(cmd)
+                log.info("[C%d] Modo noturno: %s", self.intersection_id, "ON" if enabled else "OFF")
                 return
             if action == "set_emergency":
+                active = bool(cmd.get("active", False))
+                signal_group = int(cmd.get("signal_group", 1))
                 self._apply_set_emergency(cmd)
+                via = "principal" if signal_group == 1 else "auxiliar"
+                log.info(
+                    "[C%d] Emergência: %s%s",
+                    self.intersection_id,
+                    "ON" if active else "OFF",
+                    f" via {via}" if active else "",
+                )
                 return
             if action == "set_manual_code":
                 self._apply_set_manual_code(cmd)
+                log.info("[C%d] Modo manual: código %s", self.intersection_id, self._manual_code)
                 return
             if action == "resume_automatic":
                 self._apply_resume_automatic()
+                log.info("[C%d] Ciclo automático retomado", self.intersection_id)
 
     def snapshot_sensors(self) -> List[Dict]:
         out = []
@@ -380,8 +405,18 @@ class DistributedNode:
         if msg.get("type") != "command":
             return
         target = msg.get("target", "all")
-        if target in ("all", self.intersection_id):
-            self.controller.apply_command(msg)
+        if not _command_target_matches(target, self.intersection_id):
+            return
+        self.controller.apply_command(msg)
+
+
+def _command_target_matches(target: object, intersection_id: int) -> bool:
+    if target == "all":
+        return True
+    try:
+        return int(target) == intersection_id
+    except (TypeError, ValueError):
+        return False
 
 
 def load_config(path: str) -> Dict:
@@ -390,7 +425,7 @@ def load_config(path: str) -> Dict:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Servidor Distribuído - Trabalho 1 (FSE)")
+    p = argparse.ArgumentParser(description="Entrega 3 - Nó de cruzamento")
     p.add_argument("--config", required=True, help="Caminho do JSON de configuração do cruzamento")
     p.add_argument("--log-level", default="INFO", help="DEBUG, INFO, WARNING, ERROR")
     return p

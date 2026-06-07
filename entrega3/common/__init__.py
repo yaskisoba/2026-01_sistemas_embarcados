@@ -1,1 +1,1 @@
-"""Componentes compartilhados do Trabalho 1 (Entrega 3)."""
+"""Utilitários compartilhados da entrega 3 (FSE)."""

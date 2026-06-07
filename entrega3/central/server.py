@@ -19,6 +19,11 @@ from common.persistence import atomic_save_json, load_json
 
 log = logging.getLogger(__name__)
 
+# §5.2 / critérios de avaliação: registradores de emergência 0–9 + night_mode (10)
+EMERGENCY_REG_COUNT = 10
+NIGHT_MODE_REG = 10
+SYSTEM_STATE_REG_COUNT = 11
+
 
 @dataclass
 class SensorRuntime:
@@ -80,14 +85,29 @@ class CentralServer:
             retries=int(cfg.get("rs485_retries", 3)),
             matricula_6=str(cfg["matricula_6"]),
         )
+        log.info(
+            "MODBUS 0x20: %d registradores | matrícula=%s | porta=%s",
+            EMERGENCY_REG_COUNT,
+            cfg["matricula_6"],
+            cfg["rs485_port"],
+        )
         self._lpr = LPRCameraService(self._modbus)
 
         self._camera_by_sensor = {int(k): int(v, 16) if isinstance(v, str) else int(v) for k, v in cfg["camera_by_sensor"].items()}
 
         self._night_mode = bool(persisted.get("night_mode", False))
-        self._last_emergency_active = False
 
         self._overspeed_queue: "queue.Queue[dict]" = queue.Queue()
+
+        self._system_state_addr = 0x20
+        self._system_state_reg_count = EMERGENCY_REG_COUNT
+        self._system_state_start = 0
+        self._use_unit_read_fallback = False
+        self._estado_sistema: Optional[Dict] = None
+        self._last_night_mode_read: Optional[int] = None
+        self._last_emergency_route: Optional[tuple[tuple[int, ...], int]] = None
+        self._last_modbus_state_error: Optional[str] = None
+        self._modbus_last_error_at = 0.0
 
     def _load_persisted_state(self, persisted: Dict) -> None:
         items = persisted.get("intersections", {})
@@ -108,6 +128,7 @@ class CentralServer:
                 )
 
     def run(self) -> None:
+        self._probe_modbus_at_startup()
         workers = [
             threading.Thread(target=self._tcp_server_loop, daemon=True),
             threading.Thread(target=self._modbus_state_loop, daemon=True),
@@ -230,6 +251,7 @@ class CentralServer:
 
     def _on_telemetry(self, msg: Dict) -> None:
         iid = int(msg["intersection_id"])
+        interval_total = 0
         with self._state_lock:
             cross = self._state[iid]
             cross.mode = msg.get("mode", cross.mode)
@@ -243,8 +265,18 @@ class CentralServer:
 
                 st.count_total = int(s.get("count_total", st.count_total))
                 count_interval = int(s.get("count_interval", 0))
+                interval_total += count_interval
                 st.flow_cars_min = count_interval * (60.0 / self.telemetry_interval_s)
                 st.avg_speed_interval_kmh = float(s.get("avg_speed_interval_kmh", 0.0))
+
+        if interval_total > 0:
+            parts = []
+            for s in msg.get("sensors", []):
+                count_interval = int(s.get("count_interval", 0))
+                if count_interval > 0:
+                    avg = float(s.get("avg_speed_interval_kmh", 0.0))
+                    parts.append(f"S{s['sensor_id']}:{count_interval}@{avg:.0f}km/h")
+            log.info("Telemetria C%d: %s", iid, ", ".join(parts))
 
     def _send_command(self, command: Dict, target: int | str = "all") -> None:
         payload = {"type": "command", "target": target}
@@ -267,47 +299,210 @@ class CentralServer:
             except Exception as exc:
                 log.warning("Falha ao enviar comando para C%d: %s", conn.intersection_id, exc)
 
+    def _probe_modbus_at_startup(self) -> None:
+        try:
+            regs = self._fetch_device_state_block()
+            estado = self._parse_device_state(regs)
+            self._estado_sistema = dict(estado)
+            log.info(
+                "MODBUS 0x20 OK na inicialização: active=%s intersection=%s "
+                "signal_group=%s night=%s",
+                estado["active"],
+                estado["intersection_id"],
+                estado["signal_group"],
+                estado["night_mode"],
+            )
+            self._sync_traffic_controller_state(estado)
+        except Exception as exc:
+            log.warning("MODBUS 0x20 indisponível na inicialização: %s", exc)
+
+    def _fetch_device_state_block(self) -> List[int]:
+        if self._use_unit_read_fallback:
+            return self._fetch_device_state_unit_reads()
+
+        counts = [self._system_state_reg_count]
+        for candidate in (EMERGENCY_REG_COUNT, SYSTEM_STATE_REG_COUNT):
+            if candidate not in counts:
+                counts.append(candidate)
+
+        last_error: Exception | None = None
+        for count in counts:
+            try:
+                regs = self._modbus.read_holding_registers(
+                    self._system_state_addr,
+                    self._system_state_start,
+                    count,
+                )
+                self._system_state_reg_count = len(regs)
+                while len(regs) < SYSTEM_STATE_REG_COUNT:
+                    regs.append(0)
+                return regs
+            except Exception as exc:
+                last_error = exc
+                if "0x02" not in str(exc) and "Illegal Data Address" not in str(exc):
+                    break
+
+        try:
+            regs = self._fetch_device_state_unit_reads()
+            self._use_unit_read_fallback = True
+            log.info("Dispositivo 0x20: fallback para leitura unitária")
+            return regs
+        except Exception:
+            pass
+
+        try:
+            regs = self._fetch_device_state_offset_one()
+            self._system_state_start = 1
+            self._use_unit_read_fallback = True
+            log.info("MODBUS 0x20: registradores passaram a ser lidos a partir do offset 1")
+            while len(regs) < SYSTEM_STATE_REG_COUNT:
+                regs.append(0)
+            return regs
+        except Exception:
+            if last_error is not None:
+                raise last_error
+            raise
+
+    def _fetch_device_state_unit_reads(self) -> List[int]:
+        regs: List[int] = []
+        for offset in range(EMERGENCY_REG_COUNT):
+            regs.append(
+                self._modbus.read_holding_registers(
+                    self._system_state_addr,
+                    self._system_state_start + offset,
+                    1,
+                )[0]
+            )
+        try:
+            regs.append(
+                self._modbus.read_holding_registers(
+                    self._system_state_addr,
+                    self._system_state_start + NIGHT_MODE_REG,
+                    1,
+                )[0]
+            )
+        except Exception:
+            regs.append(0)
+        return regs
+
+    def _fetch_device_state_offset_one(self) -> List[int]:
+        try:
+            return self._modbus.read_holding_registers(
+                self._system_state_addr,
+                1,
+                self._system_state_reg_count,
+            )
+        except Exception as block_error:
+            if "0x02" not in str(block_error) and "Illegal Data Address" not in str(block_error):
+                raise
+
+        regs: List[int] = []
+        for offset in range(EMERGENCY_REG_COUNT):
+            regs.append(
+                self._modbus.read_holding_registers(
+                    self._system_state_addr,
+                    1 + offset,
+                    1,
+                )[0]
+            )
+        return regs
+
+    @staticmethod
+    def _parse_device_state(registers: List[int]) -> Dict:
+        if len(registers) < EMERGENCY_REG_COUNT:
+            raise RuntimeError(
+                f"Resposta 0x20 incompleta: esperado {EMERGENCY_REG_COUNT}, recebido {len(registers)}"
+            )
+        return {
+            "active": registers[0],
+            "road": registers[1],
+            "direction": registers[2],
+            "intersection_id": registers[3],
+            "vehicle_type": registers[4],
+            "signal_group": registers[5],
+            "timed_out": registers[6],
+            "unattended_count": registers[7],
+            "elapsed_s_x10": registers[8],
+            "max_time_s_x10": registers[9],
+            "night_mode": registers[NIGHT_MODE_REG] if len(registers) > NIGHT_MODE_REG else 0,
+        }
+
+    def _resolve_emergency(self, estado: Dict) -> Optional[tuple[tuple[int, ...], int]]:
+        if not estado["active"] or estado["signal_group"] not in (1, 2):
+            return None
+        intersection_id = int(estado["intersection_id"])
+        road = int(estado["road"])
+        if intersection_id in (1, 2):
+            return ((intersection_id,), int(estado["signal_group"]))
+        if intersection_id == 0 and road == 1:
+            return ((1, 2), int(estado["signal_group"]))
+        return None
+
+    def _sync_traffic_controller_state(self, estado: Dict) -> None:
+        night_mode = 1 if estado["night_mode"] else 0
+        if night_mode != self._last_night_mode_read:
+            self._night_mode = bool(night_mode)
+            self._last_night_mode_read = night_mode
+            self._send_command({"action": "set_night_mode", "enabled": self._night_mode}, target="all")
+            log.info("Modo noturno %s (MODBUS)", "ativado" if night_mode else "desativado")
+
+        emergencia = self._resolve_emergency(estado)
+        if emergencia == self._last_emergency_route:
+            return
+
+        if emergencia is None:
+            self._send_command({"action": "set_emergency", "active": False}, target="all")
+            self._last_emergency_route = None
+            log.info("Emergência desativada (MODBUS)")
+            return
+
+        cruzamentos, signal_group = emergencia
+        anteriores = set(self._last_emergency_route[0]) if self._last_emergency_route else set()
+        for iid in anteriores - set(cruzamentos):
+            self._send_command({"action": "set_emergency", "active": False}, target=iid)
+        for iid in cruzamentos:
+            self._send_command(
+                {"action": "set_emergency", "active": True, "signal_group": signal_group},
+                target=iid,
+            )
+        self._last_emergency_route = emergencia
+        via = "principal" if signal_group == 1 else "auxiliar"
+        log.info(
+            "Emergência ativada (MODBUS): cruzamentos %s, via %s",
+            list(cruzamentos),
+            via,
+        )
+
     def _modbus_state_loop(self) -> None:
         poll_s = float(self.cfg.get("emergency_poll_s", 0.3))
         while self._running.is_set():
             try:
-                regs = self._modbus.read_holding_registers(0x20, 0, 11)
-                active = regs[0] == 1
-                road = regs[1]
-                intersection_id = regs[3]
-                signal_group = regs[5] if regs[5] in (1, 2) else 1
-                night_mode = regs[10] == 1
-
-                if night_mode != self._night_mode:
-                    self._night_mode = night_mode
-                    self._send_command({"action": "set_night_mode", "enabled": self._night_mode}, target="all")
-
-                if active:
-                    for iid in self._affected_intersections(road=road, intersection_id=intersection_id):
-                        self._send_command(
-                            {
-                                "action": "set_emergency",
-                                "active": True,
-                                "signal_group": signal_group,
-                            },
-                            target=iid,
-                        )
-                elif self._last_emergency_active:
-                    self._send_command({"action": "set_emergency", "active": False}, target="all")
-
-                self._last_emergency_active = active
+                regs = self._fetch_device_state_block()
+                estado = self._parse_device_state(regs)
+                if estado != self._estado_sistema:
+                    log.info(
+                        "Estado simulador: active=%s road=%s intersection=%s "
+                        "signal_group=%s night=%s timed_out=%s unattended=%s",
+                        estado["active"],
+                        estado["road"],
+                        estado["intersection_id"],
+                        estado["signal_group"],
+                        estado["night_mode"],
+                        estado["timed_out"],
+                        estado["unattended_count"],
+                    )
+                    self._estado_sistema = dict(estado)
+                self._sync_traffic_controller_state(estado)
+                self._last_modbus_state_error = None
             except Exception as exc:
-                log.debug("Falha no polling MODBUS de estado: %s", exc)
+                erro = str(exc)
+                now = time.monotonic()
+                if erro != self._last_modbus_state_error or now - self._modbus_last_error_at >= 30.0:
+                    log.warning("Falha no polling MODBUS de estado (0x20): %s", exc)
+                    self._last_modbus_state_error = erro
+                    self._modbus_last_error_at = now
 
             time.sleep(poll_s)
-
-    @staticmethod
-    def _affected_intersections(road: int, intersection_id: int) -> List[int]:
-        if intersection_id in (1, 2):
-            return [intersection_id]
-        if intersection_id == 0 and road == 1:
-            return [1, 2]
-        return [1, 2]
 
     def _overspeed_worker_loop(self) -> None:
         while self._running.is_set():
@@ -321,6 +516,13 @@ class CentralServer:
                 sensor_id = int(event["sensor_id"])
                 speed = float(event["speed_kmh"])
                 ts = str(event.get("timestamp", time.strftime("%Y-%m-%d %H:%M:%S")))
+
+                log.warning(
+                    "Excesso de velocidade C%d sensor %d: %.1f km/h — acionando LPR",
+                    iid,
+                    sensor_id,
+                    speed,
+                )
 
                 camera_addr = self._camera_by_sensor[sensor_id]
                 result = self._lpr.capture(camera_addr)
@@ -404,7 +606,11 @@ class CentralServer:
         help_text = (
             "\nComandos:\n"
             "  status\n"
+            "  modbus\n"
+            "  multas\n"
             "  night on|off\n"
+            "  emergency off\n"
+            "  emergency <1|2|all> [principal|auxiliar]\n"
             "  manual <1|2> <0..7>\n"
             "  auto <1|2|all>\n"
             "  quit\n"
@@ -426,12 +632,20 @@ class CentralServer:
         if cmd == "status":
             self._print_status()
             return True
+        if cmd == "modbus":
+            self._print_modbus_state()
+            return True
+        if cmd == "multas":
+            self._print_fines_history()
+            return True
         if cmd == "quit":
             self._running.clear()
             return True
 
         parts = cmd.split()
         if self._process_night_cmd(parts):
+            return True
+        if self._process_emergency_cmd(parts):
             return True
         if self._process_manual_cmd(parts):
             return True
@@ -444,7 +658,39 @@ class CentralServer:
             return False
         enabled = parts[1].lower() == "on"
         self._night_mode = enabled
+        self._last_night_mode_read = 1 if enabled else 0
         self._send_command({"action": "set_night_mode", "enabled": enabled}, target="all")
+        log.info("Modo noturno %s (terminal)", "ativado" if enabled else "desativado")
+        return True
+
+    def _process_emergency_cmd(self, parts: List[str]) -> bool:
+        if not parts or parts[0] != "emergency":
+            return False
+        if len(parts) == 2 and parts[1].lower() == "off":
+            self._last_emergency_route = None
+            self._send_command({"action": "set_emergency", "active": False}, target="all")
+            log.info("Emergência desativada (terminal)")
+            return True
+        if len(parts) < 2:
+            return False
+
+        target = parts[1].lower()
+        signal_group = 2 if len(parts) >= 3 and parts[2].lower() in ("aux", "auxiliar") else 1
+        if target == "all":
+            targets = [1, 2]
+        elif target in ("1", "2"):
+            targets = [int(target)]
+        else:
+            return False
+
+        for iid in targets:
+            self._send_command(
+                {"action": "set_emergency", "active": True, "signal_group": signal_group},
+                target=iid,
+            )
+        self._last_emergency_route = (tuple(targets), signal_group)
+        via = "principal" if signal_group == 1 else "auxiliar"
+        log.info("Emergência ativada (terminal): C%s via %s", target, via)
         return True
 
     def _process_manual_cmd(self, parts: List[str]) -> bool:
@@ -465,10 +711,45 @@ class CentralServer:
         self._send_command({"action": "resume_automatic"}, target=int(target))
         return True
 
+    def _print_modbus_state(self) -> None:
+        try:
+            regs = self._fetch_device_state_block()
+            estado = self._parse_device_state(regs)
+            self._estado_sistema = dict(estado)
+            print("\n==== MODBUS 0x20 (leitura imediata) ====")
+            print(f"active={estado['active']} road={estado['road']} direction={estado['direction']}")
+            print(
+                f"intersection={estado['intersection_id']} vehicle={estado['vehicle_type']} "
+                f"signal_group={estado['signal_group']}"
+            )
+            print(
+                f"night={estado['night_mode']} timed_out={estado['timed_out']} "
+                f"unattended={estado['unattended_count']}"
+            )
+            print(f"registradores brutos: {regs}")
+            print("=========================================\n")
+        except Exception as exc:
+            print(f"\nMODBUS 0x20 indisponível: {exc}\n")
+
     def _print_status(self) -> None:
         with self._state_lock:
             print("\n==== Estado Consolidado ====")
             print(f"Modo noturno: {'ON' if self._night_mode else 'OFF'}")
+            if self._estado_sistema:
+                e = self._estado_sistema
+                print(
+                    f"MODBUS 0x20: active={e['active']} intersection={e['intersection_id']} "
+                    f"signal_group={e['signal_group']} night={e['night_mode']}"
+                )
+                print(
+                    f"  timed_out={e['timed_out']} unattended={e['unattended_count']} "
+                    f"elapsed={e['elapsed_s_x10'] / 10:.1f}s "
+                    f"max_time={e['max_time_s_x10'] / 10:.1f}s"
+                )
+            elif self._last_modbus_state_error:
+                print(f"MODBUS 0x20: erro — {self._last_modbus_state_error}")
+            else:
+                print("MODBUS 0x20: ainda sem leitura")
             for iid in (1, 2):
                 c = self._state[iid]
                 print(
@@ -483,6 +764,25 @@ class CentralServer:
                     )
             print("============================\n")
 
+    def _print_fines_history(self) -> None:
+        print("\n==== Histórico de multas ====")
+        path = Path(self._fines_log)
+        if not path.exists():
+            print("Nenhuma multa registrada.")
+            print("=============================\n")
+            return
+
+        lines = path.read_text(encoding="utf-8").splitlines()
+        if not lines:
+            print("Nenhuma multa registrada.")
+            print("=============================\n")
+            return
+
+        recent = lines[-10:]
+        for idx, line in enumerate(recent, start=1):
+            print(f"{idx}. {line}")
+        print("=============================\n")
+
 
 def load_config(path: str) -> Dict:
     with open(path, "r", encoding="utf-8") as f:
@@ -490,7 +790,7 @@ def load_config(path: str) -> Dict:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Servidor Central - Trabalho 1 (FSE)")
+    p = argparse.ArgumentParser(description="Entrega 3 — Servidor Central")
     p.add_argument("--config", required=True, help="Caminho do JSON de configuração")
     p.add_argument("--log-level", default="INFO", help="DEBUG, INFO, WARNING, ERROR")
     return p

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from typing import Callable, Dict, Optional
 
 
@@ -22,9 +23,13 @@ class GPIOAdapter:
         self._callbacks: Dict[int, Callable[[int], None]] = {}
         self._pin_state: Dict[int, int] = {}
         self._lock = threading.Lock()
+        self._poll_pins: Dict[int, Callable[[int], None]] = {}
+        self._poll_thread: Optional[threading.Thread] = None
+        self._running = True
 
         if not self._mock:
             _GPIO.setwarnings(False)
+            _GPIO.cleanup()
             _GPIO.setmode(_GPIO.BCM)
 
     @property
@@ -65,15 +70,42 @@ class GPIOAdapter:
         if self._mock:
             self._callbacks[pin] = callback
             return
-        if debounce_ms is None:
-            _GPIO.add_event_detect(pin, _GPIO.RISING, callback=callback)
-        else:
-            _GPIO.add_event_detect(
-                pin,
-                _GPIO.RISING,
-                callback=callback,
-                bouncetime=debounce_ms,
-            )
+        try:
+            _GPIO.remove_event_detect(pin)
+        except Exception:
+            pass
+        try:
+            if debounce_ms is None:
+                _GPIO.add_event_detect(pin, _GPIO.RISING, callback=callback)
+            else:
+                _GPIO.add_event_detect(
+                    pin,
+                    _GPIO.RISING,
+                    callback=callback,
+                    bouncetime=debounce_ms,
+                )
+        except RuntimeError:
+            # Pino não suporta interrupt (ex: GPIO1/SDA) — usa polling
+            self._poll_pins[pin] = callback
+            if self._poll_thread is None or not self._poll_thread.is_alive():
+                self._poll_thread = threading.Thread(
+                    target=self._poll_loop, daemon=True
+                )
+                self._poll_thread.start()
+
+    def _poll_loop(self) -> None:
+        last: Dict[int, int] = {}
+        while self._running:
+            for pin, cb in list(self._poll_pins.items()):
+                try:
+                    val = int(_GPIO.input(pin))
+                    prev = last.get(pin, 0)
+                    if val == 1 and prev == 0:
+                        cb(pin)
+                    last[pin] = val
+                except Exception:
+                    pass
+            time.sleep(0.01)
 
     def mock_trigger_rising(self, pin: int) -> None:
         if not self._mock:
@@ -83,6 +115,7 @@ class GPIOAdapter:
             cb(pin)
 
     def cleanup(self) -> None:
+        self._running = False
         if self._mock:
             return
         _GPIO.cleanup()
