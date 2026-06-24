@@ -150,7 +150,7 @@ As funcionalidades centrais do Nest — sensoriamento ambiental, detecção de p
 
 ## 4. Pesquisa bibliográfica e tecnológica
 
-> Todos os 8 artigos abaixo são **publicados em _journals_** (revistas científicas com revisão por pares) e têm link verificável. Os de acesso aberto (MDPI *Sensors*, *IEEE Access*, EAI) têm PDF gratuito direto; os da Elsevier (*Energy and Buildings*, *Journal of Systems and Software*, *Journal of Building Engineering*) são acessíveis pelo Portal de Periódicos Capes / DOI (⚠️ **não** subir o PDF ao repositório).
+> Todos os 8 artigos abaixo são **publicados em _journals_** (revistas científicas com revisão por pares) e têm link verificável. Os de acesso aberto (MDPI *Sensors*, *IEEE Access*, EAI) têm PDF gratuito direto; os da Elsevier (*Energy and Buildings*, *Journal of Systems and Software*, *Journal of Building Engineering*) são acessíveis pelo Portal de Periódicos Capes / DOI.
 
 ### 4.1 Artigos sobre tecnologias que viabilizam o produto (4)
 
