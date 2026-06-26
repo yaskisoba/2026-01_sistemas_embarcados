@@ -48,22 +48,22 @@ Consumidores residenciais em regiões com sistemas de HVAC (forte presença em E
 
 ### Componentes e sensores utilizados
 
-- Sensor(es) de **temperatura**;
-- Sensor de **umidade**;
-- Sensores de **presença/ocupação** (PIR — *near-field* e *far-field*);
-- Sensor de **luminosidade ambiente** (ajuste de brilho do display e ativação ao se aproximar);
-- **Display circular** colorido (LCD/TFT);
-- **Anel rotativo** com clique como interface de entrada;
-- **Bateria recarregável** de íon-lítio + circuito de *power stealing* (captação de energia da fiação do HVAC).
+- Sensor(es) de **temperatura** (precisão de ±1 °F) ([specs Google Nest](https://support.google.com/googlehome/answer/9230098));
+- Sensor de **umidade** (precisão de ±3%) ([specs Google Nest](https://support.google.com/googlehome/answer/9230098));
+- Sensores de **presença/ocupação** (PIR — *near-field* para "acordar" o display via *Farsight* e *far-field* para o *Auto-Away*) ([teardown SparkFun](https://learn.sparkfun.com/tutorials/nest-thermostat-teardown-/all));
+- Sensor de **luminosidade ambiente** (ajuste de brilho do display) ([specs Google Nest](https://support.google.com/googlehome/answer/9230098));
+- **Display circular** colorido (TFT 480×480 na 3ª geração) ([teardown Freedom To Play](https://www.frdmtoplay.com/nest-thermostat-v3-teardown/));
+- **Anel rotativo** de aço inox com clique como interface de entrada ([specs Google Nest](https://store.google.com/product/nest_learning_thermostat_4th_gen_specs));
+- **Bateria recarregável** de íon-lítio (568 mAh) + circuito de *power stealing* (captação de energia da fiação do HVAC) ([teardown Freedom To Play](https://www.frdmtoplay.com/nest-thermostat-v3-teardown/)).
 
 > As especificações detalhadas de cada componente, com os respectivos números de peça por geração, estão documentadas na [Seção 2](#2-análise-técnica-do-funcionamento) e fundamentadas nos *teardowns* e nas especificações oficiais listados nas [Referências](#6-referências-bibliográficas).
 
 ### Tecnologias de comunicação e controle embarcadas
 
-- **Wi-Fi** 802.11 b/g/n (2,4 GHz) para conexão com a nuvem/app;
-- **IEEE 802.15.4** (ZigBee / posteriormente Thread) para malha de baixo consumo;
-- **Bluetooth LE** (gerações mais recentes, usado no setup);
-- Controle dos circuitos de **24 VAC** do HVAC através de relés/chaveamento (terminais W, Y, G, Rh/Rc, etc.).
+- **Wi-Fi** 802.11 b/g/n (2,4 GHz; dual-band 2,4/5 GHz na 3ª geração) para conexão com a nuvem/app ([specs Google Nest](https://support.google.com/googlehome/answer/9230098));
+- **IEEE 802.15.4** (ZigBee na origem, depois Thread/Weave) para malha de baixo consumo com outros dispositivos Nest ([teardown iFixit](https://www.ifixit.com/Teardown/Nest+Learning+Thermostat+2nd+Generation+Teardown/13818));
+- **Bluetooth LE** (gerações mais recentes, usado na configuração inicial) ([specs Google Nest](https://support.google.com/googlehome/answer/9230098));
+- Controle dos circuitos de **24 VAC** do HVAC através de relés/chaveamento (terminais W, Y, G, Rh/Rc, etc.) ([specs Google Nest](https://support.google.com/googlehome/answer/9230098)).
 
 ---
 
@@ -162,6 +162,16 @@ As funcionalidades centrais do Nest — leitura de temperatura, ajuste por anel 
 - **Detecção de presença:** o **PIR** não detecta pessoas **paradas**; mitiga-se com um *timeout* maior antes do *Auto-Away* (o Nest usa sensores adicionais para presença estática).
 - **Display e UX:** o **OLED 0,96"** é retangular e menor que o display circular do Nest — funcional para mostrar dados, sem reproduzir a estética do *dial*.
 - **"Aprendizado":** trata-se de uma **agenda simples** (histerese + horários salvos em NVS), não do algoritmo de aprendizado de máquina do Nest.
+
+### Viabilidade de implementação
+
+A proposta é **totalmente viável** como projeto prático de sistemas embarcados:
+
+- ✅ **Todos os componentes** estão na *Lista de Sensores e Atuadores* da disciplina;
+- ✅ **Complexidade adequada** ao escopo acadêmico, sem integração com a rede elétrica residencial;
+- ✅ **Funções centrais replicáveis**: sensoriamento, interface giratória, controle automático por histerese, *Auto-Away* e conectividade;
+- ✅ Usa apenas barramentos nativos da ESP32 (**1-Wire, I²C, ADC, GPIO** e **Wi-Fi**), sem hardware especializado;
+- ✅ **Validação completa em bancada**, com o relé acionando uma carga indicadora (LED RGB/buzzer) no lugar do HVAC real.
 
 ---
 
