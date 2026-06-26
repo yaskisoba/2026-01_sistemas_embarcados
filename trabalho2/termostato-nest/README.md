@@ -116,35 +116,52 @@ A análise dos *teardowns* públicos (iFixit, SparkFun, IHS Markit) revela uma *
 
 ### Visão geral
 
-As funcionalidades centrais do Nest — sensoriamento ambiental, detecção de presença, interface por anel rotativo, controle do HVAC e conectividade — podem ser recriadas conceitualmente com uma **ESP32** e periféricos do ecossistema **ESP-IDF**.
+As funcionalidades centrais do Nest — leitura de temperatura, ajuste por anel rotativo, controle liga/desliga do HVAC, detecção de presença e conectividade — podem ser recriadas de forma **simples e funcional** com uma **ESP32** (ecossistema **ESP-IDF**) e componentes **disponíveis no laboratório da disciplina**. O objetivo não é copiar o Nest fielmente, mas reproduzir o seu comportamento essencial — um **termostato com setpoint, controle por histerese, modo de ausência e interface giratória** — com peças simples.
 
-### Mapeamento funcionalidade → componente
+> Todos os componentes da tabela abaixo pertencem à *Lista de Sensores e Atuadores* disponibilizada para o Trabalho.
 
-| Funcionalidade do Nest | Componente proposto (ESP32) | Observações |
-| --- | --- | --- |
-| Medição de temperatura/umidade | **BME280** ou **DHT22** | BME280 (I²C) também mede pressão; mais preciso |
-| Detecção de presença (*Auto-Away*) | **PIR HC-SR501** (near) + **sensor mmWave** (far-field, ex. LD2410) | mmWave detecta presença estática melhor que PIR |
-| Luminosidade ambiente | **BH1750** ou LDR | Ajuste de brilho do display |
-| Display circular | **TFT redondo GC9A01** (240×240, SPI) | Reproduz o visual do anel/dial do Nest |
-| Entrada por anel rotativo + clique | **Encoder rotativo EC11** com push-button | Equivalente ao anel girável com clique |
-| Controle do HVAC (24 VAC) | **Módulo relé** (1–3 canais) | Chaveia os terminais W/Y/G de forma isolada |
-| Conectividade com nuvem/app | **Wi-Fi nativo** + **MQTT** | App/painel via broker MQTT ou HTTP |
-| Malha de baixo consumo (ZigBee/Thread) | **ESP32-C6** ou **ESP32-H2** | Têm rádio 802.15.4 (Thread/Zigbee/Matter) nativo |
-| Economia de energia | **Deep sleep** + wake por sensor/touch | Análogo ao *power stealing* + gestão de energia |
-| Aprendizado de programação | Algoritmo em firmware; histórico em **NVS/SPIFFS** | Versão simplificada do *Learning* |
+### Mapeamento funcionalidade → componente (kit do laboratório)
+
+| Funcionalidade do Nest | Componente (lista da disciplina) | Barramento | Papel na reprodução |
+| --- | --- | --- | --- |
+| Medição de temperatura | **DS18B20** (temperatura digital) | 1-Wire (GPIO) | Variável de processo do controle; núcleo do termostato |
+| Medição complementar (clima) | **BMP280** (pressão + temperatura) | I²C | Opcional: redundância de temperatura e dado de pressão |
+| Ajuste do setpoint (anel girável) | **Encoder Rotativo + Botão** | GPIO | Gira para ajustar a temperatura-alvo; clique confirma/entra no menu — equivalente direto ao anel do Nest |
+| Exibição (temp. atual/alvo, estado) | **Tela OLED 0,96" (I²C)** | I²C | Substitui o display circular; mostra leitura, alvo e modo |
+| Acionamento do HVAC | **Relé de 1 ou 2 canais** | GPIO | Liga/desliga aquecimento (1 canal) ou aquecimento + refrigeração (2 canais) |
+| Detecção de presença (*Auto-Away*) | **Sensor de Movimento (PIR)** | GPIO | Sem movimento por X min → modo ausente (economia) |
+| Luminosidade ambiente | **Foto-resistor (LDR)** | ADC | Reduz brilho do display / "acorda" a tela ao aproximar |
+| Indicação visual de estado | **Led RGB** | GPIO/PWM | Vermelho = aquecendo · Azul = resfriando · Verde = eco (análogo ao *Nest Leaf*) |
+| Aviso sonoro (opcional) | **Buzzer Ativo** | GPIO | Confirmação de ajuste / alerta |
+| Conectividade com app/nuvem | **Wi-Fi nativo da ESP32** + **MQTT** | — | Ajuste e monitoramento remotos |
+| Agenda / "aprendizado" | Firmware + **NVS** (memória não volátil) | — | Versão simplificada: horários e último setpoint salvos |
+
+### Lógica de funcionamento (simplificada)
+
+1. O usuário gira o **encoder** para definir a **temperatura-alvo** (setpoint), exibida no **OLED**.
+2. A ESP32 lê a **temperatura** (DS18B20) periodicamente e aplica **controle por histerese**:
+   - se `T < setpoint − Δ` → aciona o **relé de aquecimento** (LED **vermelho**);
+   - se `T > setpoint + Δ` (modo refrigeração) → aciona o **relé de refrigeração** (LED **azul**);
+   - dentro da faixa → relés desligados (LED **verde**, estado eficiente).
+   A folga `Δ` (ex.: 0,5 °C) evita o chaveamento excessivo do relé.
+3. O **PIR** monitora presença: sem movimento por um tempo configurável, entra em **modo ausente** (*Auto-Away*), recuando o setpoint para economizar; ao detectar movimento, retorna ao normal.
+4. O **LDR** ajusta o brilho/ativação do display conforme a luz ambiente.
+5. Via **Wi-Fi/MQTT**, o setpoint e a temperatura atual podem ser lidos/alterados remotamente por um app ou painel.
+6. O **NVS** guarda o último setpoint e uma agenda simples (ex.: temperatura por período do dia), aproximando o *Learning* do Nest de forma elementar.
 
 ### Diagrama conceitual (blocos)
 
 ![Diagrama de blocos da arquitetura proposta com ESP32](imagens/diagrama-blocos.svg)
-> *Arquitetura conceitual: a ESP32 (ou ESP32-C6/H2, para rádio 802.15.4) centraliza a leitura dos sensores (BME280, BH1750, PIR e mmWave), a interface (display TFT circular + encoder rotativo), o acionamento do HVAC via relé e a conectividade Wi-Fi/MQTT com a nuvem. A barra horizontal de cada ligação indica o barramento utilizado (I²C, UART, SPI ou GPIO). (Versão em PNG disponível em `imagens/diagrama-blocos.png`.)*
+> *Arquitetura proposta com componentes do kit da disciplina: a ESP32 lê temperatura (DS18B20), presença (PIR) e luz (LDR), recebe o setpoint pelo encoder rotativo, exibe o estado no OLED, sinaliza pelo LED RGB e aciona o HVAC pelos relés, com controle remoto por Wi-Fi/MQTT. A etiqueta de cada ligação indica o barramento (1-Wire, I²C, ADC ou GPIO). (Versão em PNG em `imagens/diagrama-blocos.png`.)*
 
 ### Limitações e desafios esperados
 
-- **Power stealing:** captar energia da fiação 24 VAC do HVAC é complexo e arriscado; na prática usaríamos fonte dedicada.
-- **Compatibilidade HVAC:** sistemas reais têm múltiplos estágios (aquecimento/refrigeração, ventilador, bomba de calor) — exige cuidado com os terminais.
-- **Algoritmo de aprendizado:** reproduzir o *Learning* do Nest de forma robusta é não-trivial; faríamos uma versão simplificada (heurística/agenda).
-- **Sensor de presença:** PIR não detecta pessoas paradas; combinar com mmWave melhora o *Auto-Away*.
-- **Display e UX:** reproduzir a fluidez da interface do Nest exige otimização gráfica na ESP32.
+- **Umidade:** o Nest mede umidade, mas a lista da disciplina **não possui sensor de umidade ambiente** (há apenas chuva/gás); por isso a reprodução foca na **temperatura**, função primária do termostato. Um sensor de umidade poderia ser adicionado numa etapa futura.
+- **Carga real (HVAC):** o relé apenas **simula** o acionamento de aquecimento/refrigeração; conectar a um sistema HVAC real (24 VAC, múltiplos estágios) exige cuidado elétrico e foge ao escopo do protótipo.
+- **Power stealing:** o Nest capta energia da fiação do HVAC; aqui se usaria uma **fonte dedicada** (USB), por simplicidade e segurança.
+- **Detecção de presença:** o **PIR** não detecta pessoas **paradas**; mitiga-se com um *timeout* maior antes do *Auto-Away* (o Nest usa sensores adicionais para presença estática).
+- **Display e UX:** o **OLED 0,96"** é retangular e menor que o display circular do Nest — funcional para mostrar dados, sem reproduzir a estética do *dial*.
+- **"Aprendizado":** trata-se de uma **agenda simples** (histerese + horários salvos em NVS), não do algoritmo de aprendizado de máquina do Nest.
 
 ---
 
@@ -158,7 +175,7 @@ Temas alinhados às tecnologias críticas do Nest: comunicação mesh de baixo c
 
 **[1] Fafoutis, X. et al. (2016). "BLE or IEEE 802.15.4: Which Home IoT Communication Solution is more Energy-Efficient?"** *EAI Endorsed Transactions on the Internet of Things*, 2(5). DOI: 10.4108/eai.1-12-2016.151713.
 - **Tema:** rádio mesh / IEEE 802.15.4 vs BLE.
-- **Resumo e relação:** apresenta a primeira comparação da camada física de BLE e IEEE 802.15.4 em hardware idêntico, medindo consumo de energia e alcance, e indica em quais cenários cada padrão é mais eficiente. Relaciona-se diretamente ao Nest, que usa **IEEE 802.15.4 (ZigBee/Thread)** como rede de baixo consumo — ajuda a justificar a escolha de rádio na proposta com ESP32-C6/H2.
+- **Resumo e relação:** apresenta a primeira comparação da camada física de BLE e IEEE 802.15.4 em hardware idêntico, medindo consumo de energia e alcance, e indica em quais cenários cada padrão é mais eficiente. Relaciona-se diretamente ao Nest, que usa **IEEE 802.15.4 (ZigBee/Thread)** como rede de baixo consumo, e contextualiza os compromissos de energia entre os rádios de baixo consumo do produto.
 - **Link:** https://research-information.bris.ac.uk/en/publications/ble-or-ieee-802154-which-home-iot-communication-solution-is-more-/
 
 **[2] Santi, S.; Tian, L.; Khorov, E.; Famaey, J. (2019). "Accurate Energy Modeling and Characterization of IEEE 802.11ah RAW and TWT."** *Sensors*, 19(11), 2614. DOI: 10.3390/s19112614.
@@ -195,7 +212,7 @@ Temas alinhados às tecnologias críticas do Nest: comunicação mesh de baixo c
 
 **[8] Shokrollahi, A.; Persson, J. A.; Malekian, R.; Sarkheyli-Hägele, A.; Karlsson, F. (2024). "Passive Infrared Sensor-Based Occupancy Monitoring in Smart Buildings: A Review of Methodologies and Machine Learning Approaches."** *Sensors*, 24(5), 1533. DOI: 10.3390/s24051533.
 - **Tema:** detecção de ocupação com sensores PIR e aprendizado de máquina.
-- **Resumo e relação:** revisa (71 artigos, 2015–2023) o uso de sensores **PIR** para monitoramento de ocupação, contagem e localização de pessoas. Sustenta a escolha do PIR (e a combinação com mmWave) para reproduzir a detecção de presença do Nest na proposta ESP32.
+- **Resumo e relação:** revisa (71 artigos, 2015–2023) o uso de sensores **PIR** para monitoramento de ocupação, contagem e localização de pessoas. Sustenta a escolha do **Sensor de Movimento (PIR)** para reproduzir a detecção de presença / *Auto-Away* do Nest na proposta ESP32 e aponta suas limitações (presença estática).
 - **Link (PDF aberto):** https://www.mdpi.com/1424-8220/24/5/1533
 
 ---
@@ -249,7 +266,7 @@ Para situar o Nest no mercado, a tabela abaixo compara **seis termostatos inteli
 
 17. ESPRESSIF SYSTEMS. *ESP32 Series Datasheet*. Disponível em: https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf
 18. ESPRESSIF SYSTEMS. *ESP-IDF Programming Guide* (framework e FreeRTOS). Disponível em: https://docs.espressif.com/projects/esp-idf/en/latest/
-19. BOSCH SENSORTEC. *BME280 — Combined humidity and pressure sensor — Datasheet*. Disponível em: https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme280-ds002.pdf
-20. ROHM SEMICONDUCTOR. *BH1750FVI — Digital 16-bit Serial Output Type Ambient Light Sensor IC — Datasheet*. (datasheet do fabricante ROHM)
-21. GALAXYCORE. *GC9A01 — Single Chip TFT-LCD Controller/Driver — Datasheet*. (display TFT circular 240×240)
-22. HI-LINK. *HLK-LD2410 — 24 GHz Human Presence Radar Sensor — Datasheet*. (sensor mmWave de presença)
+19. ANALOG DEVICES (MAXIM INTEGRATED). *DS18B20 — Programmable Resolution 1-Wire Digital Thermometer — Datasheet*. Disponível em: https://www.analog.com/media/en/technical-documentation/data-sheets/ds18b20.pdf
+20. BOSCH SENSORTEC. *BMP280 — Digital Pressure Sensor — Datasheet*. Disponível em: https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmp280-ds001.pdf
+21. SOLOMON SYSTECH. *SSD1306 — 128×64 Dot Matrix OLED/PLED Segment/Common Driver — Datasheet* (controlador da tela OLED 0,96" I²C). (datasheet do fabricante Solomon Systech)
+22. HiLetgo / genérico. *Módulo Relé, Sensor de Movimento PIR (HC-SR501), Encoder Rotativo (KY-040) e LDR — folhas de dados dos módulos do kit.*
