@@ -35,10 +35,10 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 
 ## Estado do projeto
 
-- [ ] Ambiente ESP-IDF configurado
-- [ ] Teste inicial (blink)
-- [ ] LED RGB
-- [ ] Buzzer
+- [x] Ambiente ESP-IDF configurado
+- [x] Teste inicial (blink)
+- [x] LED RGB
+- [x] Buzzer
 - [ ] Display OLED (I²C)
 - [ ] Sensor BME280 (I²C)
 - [ ] Encoder rotativo
@@ -48,4 +48,28 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 
 ## Mapa de pinos
 
-_A definir conforme a montagem avança._
+| Periférico | Pino(s) na ESP32 | Observações |
+| --- | --- | --- |
+| LED de bordo | `GPIO 2` | Já soldado na placa; usado no teste inicial |
+| Barramento I²C | `SDA = GPIO 21` · `SCL = GPIO 22` | Compartilhado pelo display OLED e pelo BME280 |
+| LED RGB | `R = GPIO 25` · `G = GPIO 26` · `B = GPIO 27` | Saídas com PWM (periférico LEDC) |
+| Buzzer | `GPIO 33` | Saída digital simples |
+| Encoder rotativo | `CLK = GPIO 18` · `DT = GPIO 19` · `SW = GPIO 23` | Exigem pull-up interno |
+| Sensor PIR | `GPIO 34` | Pino somente de entrada |
+| DHT11 | `GPIO 4` | Protocolo de 1 fio bidirecional |
+
+> **Nota sobre o módulo LED RGB (WCMCU):** apesar do pino comum ser
+> marcado `-`, este módulo é de **anodo comum** — o comum vai no `3V3`
+> (não no `GND`) e cada cor acende no nível baixo. Como não há resistores
+> embutidos nem no kit, a corrente é limitada por software ajustando a
+> força dos pinos (`GPIO_DRIVE_CAP_1`). Para a montagem final, usar
+> resistores de 220–330 Ω em série com cada cor e voltar a força ao padrão.
+
+### Critérios de escolha
+
+A distribuição acima respeita as restrições elétricas da ESP32:
+
+- Os **GPIOs 6 a 11** estão ligados à memória flash e não podem ser usados.
+- Os **GPIOs 34, 35, 36 e 39** são *somente entrada* e não possuem resistores de pull-up/pull-down internos. Por isso o PIR ocupa o GPIO 34 (ele já entrega um sinal push-pull de 3,3 V e dispensa pull-up), enquanto o encoder, que depende de pull-up interno, fica em pinos bidirecionais.
+- Os **GPIOs 0, 2, 12 e 15** são *strapping pins*: seus níveis no momento do boot alteram o modo de inicialização do chip. Foram evitados, com exceção do GPIO 2, que já aciona o LED de bordo.
+- O **ADC2** deixa de funcionar quando o rádio Wi-Fi está ativo. Nenhum sensor analógico foi alocado nele, o que mantém a etapa de conectividade MQTT viável.
