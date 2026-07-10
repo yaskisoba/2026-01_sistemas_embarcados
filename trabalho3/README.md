@@ -78,6 +78,13 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 > é coerente com a altitude de Brasília (~1170 m), o que valida as fórmulas de
 > compensação. A umidade passa a ser fornecida pelo **DHT11** (GPIO 4).
 
+> **Nota sobre o DHT11 (pull-up):** o protocolo de 1 fio exige um resistor de
+> *pull-up* (4,7–10 kΩ) entre `DATA` e `VCC`; o pull-up interno da ESP32 (~45 kΩ)
+> é fraco demais para o sensor "cru". Usamos o **módulo de 3 pinos**
+> (`VCC`/`DATA`/`GND`), que já traz esse resistor embutido na placa — por isso as
+> leituras são estáveis sem componente externo. (O sensor de 4 pinos avulso
+> precisaria do resistor externo, conforme orientação do professor.)
+
 ### Critérios de escolha
 
 A distribuição acima respeita as restrições elétricas da ESP32:
