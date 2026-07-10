@@ -39,7 +39,7 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 - [x] Teste inicial (blink)
 - [x] LED RGB
 - [x] Buzzer
-- [ ] Display OLED (I²C)
+- [x] Display OLED (I²C)
 - [ ] Sensor BME280 (I²C)
 - [ ] Encoder rotativo
 - [ ] Sensor de presença PIR
@@ -64,6 +64,11 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 > embutidos nem no kit, a corrente é limitada por software ajustando a
 > força dos pinos (`GPIO_DRIVE_CAP_1`). Para a montagem final, usar
 > resistores de 220–330 Ω em série com cada cor e voltar a força ao padrão.
+
+> **Nota sobre o OLED (SSD1306 0,96"):** endereço I²C `0x3C`. É um display
+> *dual color* por hardware — as 2 primeiras páginas (16 px do topo) são
+> amarelas e o restante azul, fixo, não controlável por software. A UI do
+> termostato usa a faixa amarela para o título e a área azul para os dados.
 
 ### Critérios de escolha
 
