@@ -40,7 +40,8 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 - [x] LED RGB
 - [x] Buzzer
 - [x] Display OLED (I²C)
-- [ ] Sensor BME280 (I²C)
+- [x] Sensor BMP280 (I²C) — temperatura e pressão
+- [x] Sensor DHT11 — umidade
 - [ ] Encoder rotativo
 - [ ] Sensor de presença PIR
 - [ ] Lógica de controle (histerese + Auto-Away)
@@ -69,6 +70,13 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 > *dual color* por hardware — as 2 primeiras páginas (16 px do topo) são
 > amarelas e o restante azul, fixo, não controlável por software. A UI do
 > termostato usa a faixa amarela para o título e a área azul para os dados.
+
+> **Nota sobre o sensor (BMP280, não BME280):** o módulo adquirido, apesar
+> de vendido como "BME280", identificou-se via I²C (registrador `0xD0`) com
+> ID `0x58`, que corresponde ao **BMP280** — mede temperatura e pressão, mas
+> **não umidade**. Endereço `0x76` (`SDO`→GND). A leitura de pressão (~880 hPa)
+> é coerente com a altitude de Brasília (~1170 m), o que valida as fórmulas de
+> compensação. A umidade passa a ser fornecida pelo **DHT11** (GPIO 4).
 
 ### Critérios de escolha
 
