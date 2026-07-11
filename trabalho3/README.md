@@ -44,7 +44,7 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 - [x] Sensor DHT11 — umidade
 - [x] Encoder rotativo
 - [x] Sensor de presença PIR
-- [ ] Lógica de controle (histerese + Auto-Away)
+- [x] Lógica de controle (histerese + Auto-Away)
 - [ ] Conectividade Wi-Fi / MQTT
 
 ## Mapa de pinos
