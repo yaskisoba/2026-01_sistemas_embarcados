@@ -49,6 +49,14 @@ continua funcionando.
 As credenciais de Wi-Fi ficam em `secrets.h` (fora do Git; há um
 `secrets.h.example` como modelo). A ESP32 só conecta em redes **2,4 GHz**.
 
+### Persistência do setpoint (NVS)
+
+O último alvo escolhido (pelo encoder ou pela nuvem) é salvo na memória
+não-volátil (**NVS**) e restaurado no boot, sobrevivendo a desligamentos —
+uma versão elementar do "aprendizado" proposto no Trabalho 2. Para evitar
+desgaste da flash, a gravação é adiada ~2 s após a última mudança, de modo
+que uma girada inteira do encoder resulte em uma única escrita.
+
 ## Estado do projeto
 
 - [x] Ambiente ESP-IDF configurado

@@ -29,6 +29,7 @@
 #include "encoder.h"
 #include "pir.h"
 #include "conectividade.h"
+#include "persistencia.h"
 
 #define PINO_SDA GPIO_NUM_21
 #define PINO_SCL GPIO_NUM_22
@@ -89,13 +90,20 @@ void app_main(void)
     buzzer_init();
     encoder_init();
     pir_init();
+    persistencia_init();
     conect_init(); /* Wi-Fi + MQTT (assincrono, nao trava o controle) */
 
-    float setpoint = SETPOINT_INICIAL;
+    /* Restaura o ultimo alvo salvo (sobrevive ao desligamento). */
+    float setpoint = persistencia_carregar_setpoint(SETPOINT_INICIAL);
     float temp = 0;
     int umidade = -1;
     bool ausente = false;
     int64_t ultimo_movimento_us = esp_timer_get_time();
+
+    /* Salvamento adiado: grava o alvo na NVS ~2 s apos a ultima mudanca,
+     * para uma girada inteira do encoder virar uma unica gravacao. */
+    bool sp_alterado = false;
+    int64_t ultimo_ajuste_us = 0;
 
     buzzer_bip(60);
     ESP_LOGI(TAG, "Termostato iniciado. Alvo = %.1f C", setpoint);
@@ -109,6 +117,8 @@ void app_main(void)
             if (setpoint < SETPOINT_MIN) setpoint = SETPOINT_MIN;
             if (setpoint > SETPOINT_MAX) setpoint = SETPOINT_MAX;
             buzzer_bip(20);
+            sp_alterado = true;
+            ultimo_ajuste_us = esp_timer_get_time();
             ESP_LOGI(TAG, "novo alvo = %.1f C", setpoint);
         }
         if (encoder_consumir_botao()) {
@@ -122,7 +132,15 @@ void app_main(void)
             if (setpoint < SETPOINT_MIN) setpoint = SETPOINT_MIN;
             if (setpoint > SETPOINT_MAX) setpoint = SETPOINT_MAX;
             buzzer_bip(20);
+            sp_alterado = true;
+            ultimo_ajuste_us = esp_timer_get_time();
             ESP_LOGI(TAG, "alvo ajustado remotamente = %.1f C", setpoint);
+        }
+
+        /* Salva o alvo na NVS ~2 s apos a ultima mudanca (evita desgaste). */
+        if (sp_alterado && esp_timer_get_time() - ultimo_ajuste_us > 2000000) {
+            persistencia_salvar_setpoint(setpoint);
+            sp_alterado = false;
         }
 
         /* Presenca -> Auto-Away. */
