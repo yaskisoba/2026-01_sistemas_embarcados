@@ -162,6 +162,7 @@ static void task_controle(void *arg)
     int64_t ultimo_movimento_us = esp_timer_get_time();
     bool sp_sujo = false;
     int64_t ultimo_ajuste_us = 0;
+    bool ausente_ant = false;
 
     buzzer_bip(60);
     ESP_LOGI(TAG, "Termostato iniciado. Alvo = %.1f C", setpoint);
@@ -195,6 +196,13 @@ static void task_controle(void *arg)
         int64_t agora = esp_timer_get_time();
         if (pir_movimento()) ultimo_movimento_us = agora;
         bool ausente = (agora - ultimo_movimento_us) > (int64_t)TIMEOUT_AUSENTE_MS * 1000;
+
+        /* Bip ao entrar/sair do modo ausente (Auto-Away). */
+        if (ausente != ausente_ant) {
+            ausente_ant = ausente;
+            buzzer_bip(40);
+            ESP_LOGI(TAG, "%s", ausente ? "-> modo AUSENTE (eco)" : "-> presenca detectada");
+        }
 
         /* Le a temperatura atual e decide o estado. */
         float temp;
