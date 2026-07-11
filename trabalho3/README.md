@@ -31,7 +31,23 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 ## Software
 
 - **Framework:** ESP-IDF v5.4 (FreeRTOS)
-- **Firmware:** [`firmware/`](firmware/)
+- **Firmware:** [`firmware/`](firmware/) — cada periférico foi validado em um
+  projeto isolado; [`firmware/termostato/`](firmware/termostato/) é o firmware
+  final que integra tudo.
+
+### Conectividade (MQTT)
+
+O termostato publica o status e aceita comandos por MQTT (broker público
+`broker.hivemq.com`). A conexão é assíncrona: se a rede cair, o controle local
+continua funcionando.
+
+- **Publica** (a cada ~3 s) em `fse2026/gustavo/termostato/status`:
+  `{"temp":26.9,"umid":36,"alvo":22.0,"estado":"RESFRIANDO","presente":true}`
+- **Assina** `fse2026/gustavo/termostato/cmd`: o payload é o novo alvo em °C
+  (ex.: `24.5`), aplicado imediatamente ao setpoint.
+
+As credenciais de Wi-Fi ficam em `secrets.h` (fora do Git; há um
+`secrets.h.example` como modelo). A ESP32 só conecta em redes **2,4 GHz**.
 
 ## Estado do projeto
 
@@ -45,7 +61,7 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 - [x] Encoder rotativo
 - [x] Sensor de presença PIR
 - [x] Lógica de controle (histerese + Auto-Away)
-- [ ] Conectividade Wi-Fi / MQTT
+- [x] Conectividade Wi-Fi / MQTT
 
 ## Mapa de pinos
 

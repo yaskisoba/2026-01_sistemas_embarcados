@@ -1,3 +1,6 @@
+# Credenciais de Wi-Fi (nunca versionar)
+secrets.h
+
 # Artefatos de build do ESP-IDF
 build/
 sdkconfig

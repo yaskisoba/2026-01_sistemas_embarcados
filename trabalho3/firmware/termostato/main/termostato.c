@@ -28,6 +28,7 @@
 #include "buzzer.h"
 #include "encoder.h"
 #include "pir.h"
+#include "conectividade.h"
 
 #define PINO_SDA GPIO_NUM_21
 #define PINO_SCL GPIO_NUM_22
@@ -88,6 +89,7 @@ void app_main(void)
     buzzer_init();
     encoder_init();
     pir_init();
+    conect_init(); /* Wi-Fi + MQTT (assincrono, nao trava o controle) */
 
     float setpoint = SETPOINT_INICIAL;
     float temp = 0;
@@ -111,6 +113,16 @@ void app_main(void)
         }
         if (encoder_consumir_botao()) {
             buzzer_bip(20); vTaskDelay(pdMS_TO_TICKS(60)); buzzer_bip(20);
+        }
+
+        /* Alvo remoto (via MQTT): ajusta o setpoint pela nuvem. */
+        float sp_remoto;
+        if (conect_consumir_setpoint(&sp_remoto)) {
+            setpoint = sp_remoto;
+            if (setpoint < SETPOINT_MIN) setpoint = SETPOINT_MIN;
+            if (setpoint > SETPOINT_MAX) setpoint = SETPOINT_MAX;
+            buzzer_bip(20);
+            ESP_LOGI(TAG, "alvo ajustado remotamente = %.1f C", setpoint);
         }
 
         /* Presenca -> Auto-Away. */
@@ -142,7 +154,8 @@ void app_main(void)
         /* Tela. */
         char linha[24];
         ssd1306_limpar();
-        ssd1306_texto(0, 22, "TERMOSTATO");
+        ssd1306_texto(0, 4, "TERMOSTATO");
+        ssd1306_texto(0, 104, conect_online() ? "ON" : "--");
         if (umidade >= 0) snprintf(linha, sizeof(linha), "T:%.1f^C U:%d%%", temp, umidade);
         else              snprintf(linha, sizeof(linha), "T:%.1f^C", temp);
         ssd1306_texto(2, 0, linha);
@@ -153,8 +166,20 @@ void app_main(void)
         ssd1306_flush();
 
         if (ciclo % 10 == 0)
-            ESP_LOGI(TAG, "T=%.1f alvo=%.1f %s -> %s", temp, setpoint,
-                     ausente ? "[AUSENTE]" : "[PRESENTE]", nome_estado(estado));
+            ESP_LOGI(TAG, "T=%.1f alvo=%.1f %s -> %s %s", temp, setpoint,
+                     ausente ? "[AUSENTE]" : "[PRESENTE]", nome_estado(estado),
+                     conect_online() ? "(online)" : "(offline)");
+
+        /* Publica o status na nuvem a cada ~3 s (se conectado). */
+        if (ciclo % 30 == 0) {
+            char json[160];
+            snprintf(json, sizeof(json),
+                     "{\"temp\":%.1f,\"umid\":%d,\"alvo\":%.1f,"
+                     "\"estado\":\"%s\",\"presente\":%s}",
+                     temp, umidade, setpoint, nome_estado(estado),
+                     ausente ? "false" : "true");
+            conect_publicar_status(json);
+        }
 
         ciclo++;
         vTaskDelay(pdMS_TO_TICKS(100));
