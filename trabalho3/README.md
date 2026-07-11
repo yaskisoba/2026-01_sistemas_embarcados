@@ -35,6 +35,34 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
   projeto isolado; [`firmware/termostato/`](firmware/termostato/) é o firmware
   final que integra tudo.
 
+### Arquitetura FreeRTOS
+
+O firmware final ([`firmware/termostato/`](firmware/termostato/)) é dividido em
+**tasks** independentes, coordenadas por uma **fila** e por **mutexes**:
+
+| Task | Responsabilidade | Prioridade |
+| --- | --- | --- |
+| `controle` | Histerese + Auto-Away; aciona LED/buzzer; salva o alvo na NVS | 7 |
+| `entrada` | Lê o encoder e os comandos remotos; posta na fila | 6 |
+| `sensores` | Lê BMP280 (temperatura/pressão) e DHT11 (umidade) | 5 |
+| `display` | Desenha a tela OLED | 4 |
+| `comunicacao` | Publica a telemetria por MQTT | 3 |
+
+**Sincronização:**
+- **Fila (`xQueueCreate`)** — `task_entrada` e o callback do MQTT convertem
+  cada ajuste em um `comando_t` e postam na fila; `task_controle` consome. Isso
+  desacopla a origem do comando (encoder local ou nuvem) da lógica de controle.
+- **Mutex do estado** — a struct `sistema_t` (temperatura, umidade, alvo,
+  estado, presença) é lida e escrita por várias tasks; um `SemaphoreHandle_t`
+  garante acesso exclusivo.
+- **Mutex do I²C** — como `task_sensores` (BMP280) e `task_display` (OLED)
+  compartilham o barramento, um segundo mutex serializa as transações.
+
+As tasks da aplicação são fixadas no **core 1** (`xTaskCreatePinnedToCore`),
+deixando o **core 0** para a pilha de rede (Wi-Fi/MQTT, que rodam em suas
+próprias tasks do ESP-IDF). Isso evita que a seção crítica do DHT11 (que
+desabilita interrupções por alguns ms) perturbe o Wi-Fi.
+
 ### Conectividade (MQTT)
 
 O termostato publica o status e aceita comandos por MQTT (broker público
