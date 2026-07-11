@@ -43,7 +43,7 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 - [x] Sensor BMP280 (I²C) — temperatura e pressão
 - [x] Sensor DHT11 — umidade
 - [x] Encoder rotativo
-- [ ] Sensor de presença PIR
+- [x] Sensor de presença PIR
 - [ ] Lógica de controle (histerese + Auto-Away)
 - [ ] Conectividade Wi-Fi / MQTT
 
@@ -56,7 +56,7 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 | LED RGB | `R = GPIO 25` · `G = GPIO 26` · `B = GPIO 27` | Saídas com PWM (periférico LEDC) |
 | Buzzer | `GPIO 33` | Saída digital simples |
 | Encoder rotativo | `CLK = GPIO 18` · `DT = GPIO 19` · `SW = GPIO 23` | Exigem pull-up interno |
-| Sensor PIR | `GPIO 34` | Pino somente de entrada |
+| Sensor PIR | `OUT = GPIO 13` · `VCC = VIN (5V)` | Pull-down interno; alimentado em 5V |
 | DHT11 | `GPIO 4` | Protocolo de 1 fio bidirecional |
 
 > **Nota sobre o módulo LED RGB (WCMCU):** apesar do pino comum ser
@@ -90,6 +90,7 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 A distribuição acima respeita as restrições elétricas da ESP32:
 
 - Os **GPIOs 6 a 11** estão ligados à memória flash e não podem ser usados.
-- Os **GPIOs 34, 35, 36 e 39** são *somente entrada* e não possuem resistores de pull-up/pull-down internos. Por isso o PIR ocupa o GPIO 34 (ele já entrega um sinal push-pull de 3,3 V e dispensa pull-up), enquanto o encoder, que depende de pull-up interno, fica em pinos bidirecionais.
+- Os **GPIOs 34, 35, 36 e 39** são *somente entrada* e não possuem resistores de pull-up/pull-down internos. O PIR foi inicialmente colocado no GPIO 34, mas migrou para o **GPIO 13**: como o 34 não tem pull-down, um eventual mau contato no fio de `OUT` deixava o pino flutuando em nível alto (falsa detecção permanente). No GPIO 13, com pull-down interno, a leitura cai para "sem presença" quando nada está conduzindo, o que é mais robusto.
+- O **PIR (HC-SR501) é alimentado em 5V** (pino `VIN`), pois não opera de forma confiável em 3,3 V. A saída, porém, é de 3,3 V, segura para o GPIO. Atenção: a ordem `VCC`/`GND` varia entre módulos — conferir os rótulos na placa.
 - Os **GPIOs 0, 2, 12 e 15** são *strapping pins*: seus níveis no momento do boot alteram o modo de inicialização do chip. Foram evitados, com exceção do GPIO 2, que já aciona o LED de bordo.
 - O **ADC2** deixa de funcionar quando o rádio Wi-Fi está ativo. Nenhum sensor analógico foi alocado nele, o que mantém a etapa de conectividade MQTT viável.
