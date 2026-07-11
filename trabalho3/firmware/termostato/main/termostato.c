@@ -27,6 +27,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "driver/i2c_master.h"
+#include "driver/gpio.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "ssd1306.h"
@@ -41,6 +42,7 @@
 
 #define PINO_SDA GPIO_NUM_21
 #define PINO_SCL GPIO_NUM_22
+#define PINO_LED_PRESENCA GPIO_NUM_2 /* LED de bordo: acende com presenca */
 
 #define SETPOINT_INICIAL 22.0f
 #define SETPOINT_MIN     10.0f
@@ -192,9 +194,11 @@ static void task_controle(void *arg)
             sp_sujo = false;
         }
 
-        /* Presenca -> Auto-Away. */
+        /* Presenca -> Auto-Away. Acende o LED de bordo enquanto detecta. */
         int64_t agora = esp_timer_get_time();
-        if (pir_movimento()) ultimo_movimento_us = agora;
+        bool movimento = pir_movimento();
+        gpio_set_level(PINO_LED_PRESENCA, movimento);
+        if (movimento) ultimo_movimento_us = agora;
         bool ausente = (agora - ultimo_movimento_us) > (int64_t)TIMEOUT_AUSENTE_MS * 1000;
 
         /* Bip ao entrar/sair do modo ausente (Auto-Away). */
@@ -298,6 +302,8 @@ void app_main(void)
     buzzer_init();
     encoder_init();
     pir_init();
+    gpio_reset_pin(PINO_LED_PRESENCA);
+    gpio_set_direction(PINO_LED_PRESENCA, GPIO_MODE_OUTPUT);
     persistencia_init();
     conect_init(); /* Wi-Fi + MQTT (assincrono; cria suas proprias tasks) */
 
