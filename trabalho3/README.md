@@ -42,7 +42,7 @@ Termostato que lê temperatura e umidade do ambiente, permite ajustar a temperat
 - [x] Display OLED (I²C)
 - [x] Sensor BMP280 (I²C) — temperatura e pressão
 - [x] Sensor DHT11 — umidade
-- [ ] Encoder rotativo
+- [x] Encoder rotativo
 - [ ] Sensor de presença PIR
 - [ ] Lógica de controle (histerese + Auto-Away)
 - [ ] Conectividade Wi-Fi / MQTT
