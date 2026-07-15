@@ -186,7 +186,13 @@ static void task_controle(void *arg)
             ultimo_ajuste_us = esp_timer_get_time();
             ESP_LOGI(TAG, "novo alvo = %.1f C", setpoint);
         }
-        if (botao) { buzzer_bip(20); vTaskDelay(pdMS_TO_TICKS(60)); buzzer_bip(20); }
+        if (botao) {
+            setpoint = SETPOINT_INICIAL; /* toque no botao volta ao alvo padrao */
+            sp_sujo = true;
+            ultimo_ajuste_us = esp_timer_get_time();
+            buzzer_bip(20); vTaskDelay(pdMS_TO_TICKS(60)); buzzer_bip(20);
+            ESP_LOGI(TAG, "botao: alvo resetado para %.1f C", setpoint);
+        }
 
         /* Salva o alvo na NVS ~2 s apos a ultima mudanca. */
         if (sp_sujo && esp_timer_get_time() - ultimo_ajuste_us > 2000000) {
