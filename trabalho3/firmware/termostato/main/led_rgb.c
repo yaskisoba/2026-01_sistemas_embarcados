@@ -6,9 +6,7 @@
 #define PINO_G GPIO_NUM_26
 #define PINO_B GPIO_NUM_27
 
-/* Modulo WCMCU: anodo comum (comum no 3V3, acende no nivel baixo). */
 #define CATODO_COMUM 0
-/* Sem resistores externos: limita corrente reduzindo a forca do pino. */
 #define FORCA_PINO GPIO_DRIVE_CAP_1
 
 #define RESOLUCAO LEDC_TIMER_10_BIT

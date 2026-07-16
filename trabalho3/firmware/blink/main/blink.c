@@ -1,8 +1,3 @@
-/*
- * Etapa 1 — Teste inicial do ambiente.
- * Pisca o LED que ja vem soldado na placa ESP32 DevKit (GPIO 2).
- * Nenhuma ligacao externa e necessaria.
- */
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"

@@ -1,15 +1,3 @@
-/*
- * Etapa 5 - Sensor BME280 (temperatura, umidade e pressao) via I2C.
- * O sensor entrega valores BRUTOS; a temperatura/umidade/pressao reais
- * saem aplicando as formulas de compensacao da Bosch sobre os
- * coeficientes de calibracao gravados de fabrica no chip.
- *
- * O registrador de ID (0xD0) diz qual chip esta presente:
- *   0x60 = BME280 (tem umidade) | 0x58 = BMP280 (sem umidade).
- *
- * Ligacao (mesmo barramento I2C do OLED):
- *   SDA -> GPIO 21    SCL -> GPIO 22    VCC -> 3V3    GND -> GND
- */
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -22,17 +10,16 @@
 static const char *TAG = "bme280";
 
 static i2c_master_dev_handle_t dev;
-static bool tem_umidade; /* true se BME280, false se BMP280 */
+static bool tem_umidade;
 
-/* Coeficientes de calibracao lidos do chip. */
 static uint16_t dig_T1, dig_P1;
-static int16_t  dig_T2, dig_T3;
-static int16_t  dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
-static uint8_t  dig_H1, dig_H3;
-static int16_t  dig_H2, dig_H4, dig_H5;
-static int8_t   dig_H6;
+static int16_t dig_T2, dig_T3;
+static int16_t dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
+static uint8_t dig_H1, dig_H3;
+static int16_t dig_H2, dig_H4, dig_H5;
+static int8_t dig_H6;
 
-static double t_fine; /* compartilhado entre temperatura, pressao e umidade */
+static double t_fine;
 
 static esp_err_t ler(uint8_t reg, uint8_t *dst, size_t n)
 {
@@ -53,7 +40,7 @@ static void ler_calibracao(void)
     dig_T2 = c[2] | (c[3] << 8);
     dig_T3 = c[4] | (c[5] << 8);
     dig_P1 = c[6] | (c[7] << 8);
-    dig_P2 = c[8]  | (c[9] << 8);
+    dig_P2 = c[8] | (c[9] << 8);
     dig_P3 = c[10] | (c[11] << 8);
     dig_P4 = c[12] | (c[13] << 8);
     dig_P5 = c[14] | (c[15] << 8);
@@ -74,7 +61,6 @@ static void ler_calibracao(void)
     }
 }
 
-/* Formulas de compensacao (ponto flutuante) do datasheet Bosch. */
 static double compensar_temp(int32_t adc_T)
 {
     double v1 = (adc_T / 16384.0 - dig_T1 / 1024.0) * dig_T2;
@@ -98,7 +84,7 @@ static double compensar_press(int32_t adc_P)
     v1 = dig_P9 * p * p / 2147483648.0;
     v2 = p * dig_P8 / 32768.0;
     p = p + (v1 + v2 + dig_P7) / 16.0;
-    return p / 100.0; /* Pa -> hPa */
+    return p / 100.0;
 }
 
 static double compensar_umid(int32_t adc_H)
@@ -157,9 +143,9 @@ void app_main(void)
     }
 
     ler_calibracao();
-    escrever(0xF2, 0x01);        /* ctrl_hum: umidade oversampling x1 */
-    escrever(0xF4, 0x27);        /* ctrl_meas: temp x1, press x1, modo normal */
-    escrever(0xF5, 0xA0);        /* config: standby 1s */
+    escrever(0xF2, 0x01);
+    escrever(0xF4, 0x27);
+    escrever(0xF5, 0xA0);
 
     while (true) {
         uint8_t d[8];

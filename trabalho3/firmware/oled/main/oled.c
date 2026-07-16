@@ -1,13 +1,3 @@
-/*
- * Etapa 4c - Texto no OLED SSD1306 (128x64, I2C).
- * Desenha uma previa da tela do termostato usando uma fonte 5x7.
- * A faixa amarela do topo (16 px) recebe o titulo; a area azul, os
- * dados. Um contador incrementa a cada segundo para evidenciar que
- * a tela e atualizada ao vivo.
- *
- * Ligacao:
- *   SDA -> GPIO 21    SCL -> GPIO 22    VCC -> 3V3    GND -> GND
- */
 #include <string.h>
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
@@ -23,15 +13,14 @@
 static const char *TAG = "oled";
 
 static i2c_master_dev_handle_t dev;
-static uint8_t fb[OLED_W * 64 / 8]; /* 8 paginas de 128 colunas */
+static uint8_t fb[OLED_W * 64 / 8];
 
-/* Fonte 5x7: cada caractere sao 5 colunas; bit 0 = linha de cima. */
 typedef struct { char c; uint8_t col[5]; } glifo_t;
 static const glifo_t FONTE[] = {
     {' ', {0x00, 0x00, 0x00, 0x00, 0x00}},
     {':', {0x00, 0x36, 0x36, 0x00, 0x00}},
     {'.', {0x00, 0x60, 0x60, 0x00, 0x00}},
-    {'^', {0x00, 0x07, 0x05, 0x07, 0x00}}, /* grau */
+    {'^', {0x00, 0x07, 0x05, 0x07, 0x00}},
     {'0', {0x3E, 0x51, 0x49, 0x45, 0x3E}},
     {'1', {0x00, 0x42, 0x7F, 0x40, 0x00}},
     {'2', {0x42, 0x61, 0x51, 0x49, 0x46}},
@@ -88,10 +77,9 @@ static const uint8_t *glifo(char c)
     for (size_t i = 0; i < sizeof(FONTE) / sizeof(FONTE[0]); i++) {
         if (FONTE[i].c == c) return FONTE[i].col;
     }
-    return FONTE[0].col; /* caractere desconhecido -> espaco */
+    return FONTE[0].col;
 }
 
-/* Escreve texto na pagina (0..7); x em pixels. Cada char ocupa 6 px. */
 static void oled_texto(int pagina, int x, const char *s)
 {
     for (; *s && x + 5 < OLED_W; s++, x += 6) {
@@ -135,7 +123,7 @@ void app_main(void)
         char linha[24];
 
         oled_limpar();
-        oled_texto(0, 22, "TERMOSTATO");   /* pagina 0: faixa amarela */
+        oled_texto(0, 22, "TERMOSTATO");
         oled_texto(2, 0, "TEMP:  24.5^C");
         oled_texto(4, 0, "ALVO:  22.0^C");
         snprintf(linha, sizeof(linha), "CONT:  %d", contador);

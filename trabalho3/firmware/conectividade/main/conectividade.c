@@ -1,14 +1,3 @@
-/*
- * Etapa 10a - Teste de conectividade Wi-Fi + MQTT.
- * Antes de integrar no termostato, valida a rede isoladamente:
- *   1) conecta ao Wi-Fi (hotspot 2,4 GHz)
- *   2) conecta ao broker MQTT publico
- *   3) publica um contador em TOPICO_STATUS a cada 2 s
- *   4) escuta TOPICO_CMD e mostra no log o que chegar
- *
- * As credenciais ficam em secrets.h (fora do Git); os topicos e o
- * broker, em config.h.
- */
 #include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"

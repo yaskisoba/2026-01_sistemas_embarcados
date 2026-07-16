@@ -1,44 +1,21 @@
-/*
- * Etapa 2 - LED RGB com PWM (LEDC).
- * Percorre as tres cores que sinalizam o estado do termostato:
- *   vermelho = aquecendo | azul = resfriando | verde = eco
- *
- * Ligacao (modulo RGB WCMCU de ANODO COMUM):
- *   R -> GPIO 25    G -> GPIO 26    B -> GPIO 27    (-) -> 3V3
- * Apesar de o pino comum ser marcado "-", este modulo e de anodo
- * comum: o comum vai no 3V3 e cada cor acende no nivel baixo.
- *
- * Este modulo NAO tem resistores embutidos. Enquanto nao houver
- * resistores de 220-330 ohm em serie com cada cor, a corrente e
- * limitada por software: os pinos ficam no modo de menor forca
- * (GPIO_DRIVE_CAP_0), que segura a corrente em ~5 mA e protege tanto
- * o LED quanto o pino. Ao adicionar os resistores, troque por
- * GPIO_DRIVE_CAP_DEFAULT para recuperar o brilho pleno.
- */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/ledc.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 
-/* Sem resistores externos -> pino fraco. Com resistores -> _DEFAULT.
- * CAP_0 ~5 mA (mais seguro) | CAP_1 ~10 mA (mais brilho, ainda seguro). */
 #define FORCA_PINO GPIO_DRIVE_CAP_1
 
 #define PINO_R GPIO_NUM_25
 #define PINO_G GPIO_NUM_26
 #define PINO_B GPIO_NUM_27
 
-/* Este modulo WCMCU e de ANODO COMUM: o pino "-" (apesar do nome) vai
- * no 3V3 e as cores acendem no nivel baixo. Por isso 0. */
 #define CATODO_COMUM 0
 
 #define RESOLUCAO LEDC_TIMER_10_BIT
 #define DUTY_MAX ((1 << 10) - 1)
 #define FREQUENCIA_HZ 5000
 
-/* Um tick do FreeRTOS = 10 ms por padrao; valores menores arredondam
- * para zero e a animacao roda rapido demais para ser vista. */
 #define PASSO_FADE_MS 10
 
 static const char *TAG = "led_rgb";
@@ -68,12 +45,10 @@ static void led_rgb_iniciar(void)
             .hpoint = 0,
         };
         ESP_ERROR_CHECK(ledc_channel_config(&canal));
-        /* Aplicado depois do LEDC, que reconfigura o pino ao rotea-lo. */
         ESP_ERROR_CHECK(gpio_set_drive_capability(pinos[i], FORCA_PINO));
     }
 }
 
-/* Intensidade de cada cor de 0 a 255. */
 static void led_rgb_cor(uint8_t r, uint8_t g, uint8_t b)
 {
     const uint8_t intensidades[3] = {r, g, b};
@@ -88,7 +63,6 @@ static void led_rgb_cor(uint8_t r, uint8_t g, uint8_t b)
     }
 }
 
-/* Acende e apaga a cor gradualmente, confirmando que o PWM funciona. */
 static void led_rgb_respirar(uint8_t r, uint8_t g, uint8_t b)
 {
     for (int nivel = 0; nivel <= 255; nivel += 5) {

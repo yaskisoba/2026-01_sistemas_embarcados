@@ -1,4 +1,3 @@
-/* Buzzer ativo (bip de confirmacao). */
 #pragma once
 
 void buzzer_init(void);

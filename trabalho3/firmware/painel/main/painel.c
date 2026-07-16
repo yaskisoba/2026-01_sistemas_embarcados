@@ -1,17 +1,3 @@
-/*
- * Painel do termostato: le os sensores e mostra tudo no OLED.
- * Integra, num so firmware, os tres perifericos ja validados:
- *   - OLED SSD1306 (I2C, 0x3C)  -> saida
- *   - BMP280       (I2C, 0x76)  -> temperatura e pressao
- *   - DHT11        (GPIO 4)     -> umidade
- * O OLED e o BMP280 compartilham o mesmo barramento I2C (SDA 21, SCL 22).
- *
- * Layout da tela (faixa amarela no topo = titulo):
- *   TERMOSTATO
- *   TEMP: xx.x C
- *   UMID: xx %
- *   PRES: xxxx HPA
- */
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -44,7 +30,7 @@ void app_main(void)
     bool tem_sensor = bmp280_init(bus);
     if (!tem_sensor) ESP_LOGE(TAG, "BMP280 nao encontrado!");
 
-    int umidade = -1; /* mantem a ultima leitura valida do DHT11 */
+    int umidade = -1;
 
     while (true) {
         double temp = 0, press = 0;

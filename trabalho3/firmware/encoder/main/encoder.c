@@ -1,17 +1,3 @@
-/*
- * Etapa 7 - Encoder rotativo KY-040 (ajuste do setpoint).
- * O encoder gera dois sinais (CLK e DT) em quadratura; a sequencia em
- * que eles mudam diz o sentido do giro. Em vez de olhar so uma borda,
- * usamos uma MAQUINA DE ESTADOS (metodo de Ben Buxton): ela acompanha
- * toda a sequencia de um clique e so conta quando o giro e completo e
- * valido, descartando o "tremor" (bounce) do contato sem depender de
- * tempo. Resultado: exatamente um passo por clique. Interrupcao nas
- * bordas de CLK e DT alimenta a maquina; o botao (SW) usa outra ISR.
- *
- * Ligacao (KY-040):
- *   CLK -> GPIO 18    DT -> GPIO 19    SW -> GPIO 23
- *   +   -> 3V3        GND -> GND
- */
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -20,27 +6,25 @@
 #include "esp_log.h"
 
 #define PINO_CLK GPIO_NUM_18
-#define PINO_DT  GPIO_NUM_19
-#define PINO_SW  GPIO_NUM_23
+#define PINO_DT GPIO_NUM_19
+#define PINO_SW GPIO_NUM_23
 
 #define DEBOUNCE_BOTAO_US 200000
 
-#define SETPOINT_MIN   10.0f
-#define SETPOINT_MAX   35.0f
+#define SETPOINT_MIN 10.0f
+#define SETPOINT_MAX 35.0f
 #define SETPOINT_PASSO 0.5f
 
 static const char *TAG = "encoder";
 
-/* Tabela de transicao de estados (passo completo). Colunas = (CLK<<1)|DT.
- * Bits 0x10 = giro horario concluido, 0x20 = anti-horario concluido. */
-#define R_START     0x0
-#define R_CW_FINAL  0x1
-#define R_CW_BEGIN  0x2
-#define R_CW_NEXT   0x3
+#define R_START 0x0
+#define R_CW_FINAL 0x1
+#define R_CW_BEGIN 0x2
+#define R_CW_NEXT 0x3
 #define R_CCW_BEGIN 0x4
 #define R_CCW_FINAL 0x5
-#define R_CCW_NEXT  0x6
-#define DIR_CW  0x10
+#define R_CCW_NEXT 0x6
+#define DIR_CW 0x10
 #define DIR_CCW 0x20
 
 static const uint8_t ttable[7][4] = {

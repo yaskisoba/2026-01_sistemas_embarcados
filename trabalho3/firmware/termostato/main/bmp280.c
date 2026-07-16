@@ -4,8 +4,8 @@ static i2c_master_dev_handle_t dev;
 static bool tem_umidade;
 
 static uint16_t dig_T1, dig_P1;
-static int16_t  dig_T2, dig_T3;
-static int16_t  dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
+static int16_t dig_T2, dig_T3;
+static int16_t dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
 static double t_fine;
 
 static esp_err_t ler(uint8_t reg, uint8_t *dst, size_t n)
@@ -27,7 +27,7 @@ static void ler_calibracao(void)
     dig_T2 = c[2] | (c[3] << 8);
     dig_T3 = c[4] | (c[5] << 8);
     dig_P1 = c[6] | (c[7] << 8);
-    dig_P2 = c[8]  | (c[9] << 8);
+    dig_P2 = c[8] | (c[9] << 8);
     dig_P3 = c[10] | (c[11] << 8);
     dig_P4 = c[12] | (c[13] << 8);
     dig_P5 = c[14] | (c[15] << 8);
@@ -53,8 +53,8 @@ bool bmp280_init(i2c_master_bus_handle_t bus)
         if (ler(0xD0, &id, 1) == ESP_OK && (id == 0x60 || id == 0x58)) {
             tem_umidade = (id == 0x60);
             ler_calibracao();
-            escrever(0xF4, 0x27); /* temp x1, press x1, modo normal */
-            escrever(0xF5, 0xA0); /* standby 1s */
+            escrever(0xF4, 0x27);
+            escrever(0xF5, 0xA0);
             return true;
         }
         i2c_master_bus_rm_device(dev);

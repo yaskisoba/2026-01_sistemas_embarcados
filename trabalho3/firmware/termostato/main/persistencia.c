@@ -4,14 +4,12 @@
 #include "esp_log.h"
 
 #define NAMESPACE "termostato"
-#define CHAVE     "setpoint"
+#define CHAVE "setpoint"
 
 static const char *TAG = "persist";
 
 void persistencia_init(void)
 {
-    /* Idempotente: se a NVS ja foi iniciada (ex.: pela conectividade),
-     * esta chamada apenas retorna OK. */
     esp_err_t r = nvs_flash_init();
     if (r == ESP_ERR_NVS_NO_FREE_PAGES || r == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -19,7 +17,6 @@ void persistencia_init(void)
     }
 }
 
-/* A NVS nao guarda float; salvamos o alvo x10 como inteiro (ex.: 22,5 -> 225). */
 float persistencia_carregar_setpoint(float padrao)
 {
     nvs_handle_t h;

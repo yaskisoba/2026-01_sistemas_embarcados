@@ -1,15 +1,3 @@
-/*
- * Etapa 3 - Buzzer ativo.
- * Um buzzer ATIVO ja gera o tom sozinho: basta por o pino em nivel
- * alto para apitar e em nivel baixo para calar. Nao precisa de PWM.
- *
- * Ligacao (buzzer ativo, 2 terminais):
- *   perna "+" (a mais comprida) -> GPIO 33
- *   perna "-" (a mais curta)    -> GND
- *
- * Toca dois bips curtos e faz uma pausa, em loop. Esse mesmo padrao
- * sera reaproveitado como som de confirmacao do termostato.
- */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"

@@ -1,26 +1,3 @@
-/*
- * Termostato inteligente - arquitetura multitarefa (FreeRTOS).
- * A logica e dividida em tasks independentes que se coordenam por
- * uma FILA (comandos) e por MUTEX (estado compartilhado e barramento
- * I2C):
- *
- *   task_sensores    -> le BMP280 e DHT11, escreve no estado (mutex)
- *   task_entrada     -> le encoder e comandos remotos, posta na fila
- *   task_controle    -> consome a fila, aplica histerese + Auto-Away,
- *                       aciona o LED e o buzzer, salva o alvo na NVS
- *   task_display     -> le o estado (mutex) e desenha no OLED
- *   task_comunicacao -> le o estado (mutex) e publica via MQTT
- *
- * O Wi-Fi/MQTT roda em suas proprias tasks (dentro do ESP-IDF). As
- * tasks da aplicacao ficam no core 1, deixando o core 0 para a pilha
- * de rede (evita que a secao critica do DHT11 atrapalhe o Wi-Fi).
- *
- * Controle por histerese (faixa de conforto +/- banda):
- *   T < alvo - banda -> AQUECENDO  (vermelho)
- *   T > alvo + banda -> RESFRIANDO (azul)
- *   caso contrario   -> CONFORTO   (verde)
- * Auto-Away: sem movimento (PIR) por um tempo, a banda alarga (eco).
- */
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -42,29 +19,27 @@
 
 #define PINO_SDA GPIO_NUM_21
 #define PINO_SCL GPIO_NUM_22
-#define PINO_LED_PRESENCA GPIO_NUM_2 /* LED de bordo: acende com presenca */
+#define PINO_LED_PRESENCA GPIO_NUM_2
 
 #define SETPOINT_INICIAL 22.0f
-#define SETPOINT_MIN     10.0f
-#define SETPOINT_MAX     35.0f
-#define SETPOINT_PASSO    0.5f
-#define HISTERESE         0.5f
-#define ECO_BANDA         3.0f
-#define TIMEOUT_AUSENTE_MS 15000 /* demo; no mundo real seria minutos */
+#define SETPOINT_MIN 10.0f
+#define SETPOINT_MAX 35.0f
+#define SETPOINT_PASSO 0.5f
+#define HISTERESE 0.5f
+#define ECO_BANDA 3.0f
+#define TIMEOUT_AUSENTE_MS 15000
 
 typedef enum { AQUECENDO, RESFRIANDO, CONFORTO } estado_t;
 
-/* Estado compartilhado entre as tasks (protegido por mutex_estado). */
 typedef struct {
-    float    temp;
-    int      umidade;
-    float    pressao;
-    float    setpoint;
+    float temp;
+    int umidade;
+    float pressao;
+    float setpoint;
     estado_t estado;
-    bool     ausente;
+    bool ausente;
 } sistema_t;
 
-/* Comando de mudanca de alvo, transportado pela fila. */
 typedef enum { CMD_DELTA, CMD_ABSOLUTO, CMD_BOTAO } tipo_cmd_t;
 typedef struct { tipo_cmd_t tipo; float valor; } comando_t;
 
@@ -72,11 +47,9 @@ static const char *TAG = "termostato";
 
 static sistema_t sis;
 static bool tem_sensor;
-static SemaphoreHandle_t mutex_estado; /* protege 'sis' */
-static SemaphoreHandle_t mutex_i2c;    /* serializa o barramento I2C */
-static QueueHandle_t fila_comandos;    /* comandos -> task_controle */
-
-/* ---------- funcoes auxiliares ---------- */
+static SemaphoreHandle_t mutex_estado;
+static SemaphoreHandle_t mutex_i2c;
+static QueueHandle_t fila_comandos;
 
 static estado_t decidir_estado(float temp, float alvo, float banda)
 {
@@ -103,8 +76,6 @@ static const char *nome_estado(estado_t e)
     }
 }
 
-/* ---------- tasks ---------- */
-
 static void task_sensores(void *arg)
 {
     int ciclo = 0;
@@ -119,7 +90,6 @@ static void task_sensores(void *arg)
             sis.pressao = (float)p;
             xSemaphoreGive(mutex_estado);
         }
-        /* DHT11 e lento; le a cada ~3 s. Nao usa I2C. */
         if (ciclo % 3 == 0) {
             int u, tt;
             if (dht11_ler(&u, &tt) == 0) {
@@ -170,7 +140,6 @@ static void task_controle(void *arg)
     ESP_LOGI(TAG, "Termostato iniciado. Alvo = %.1f C", setpoint);
 
     while (true) {
-        /* Consome todos os comandos pendentes da fila. */
         comando_t c;
         bool mudou = false, botao = false;
         while (xQueueReceive(fila_comandos, &c, 0) == pdTRUE) {
@@ -187,34 +156,30 @@ static void task_controle(void *arg)
             ESP_LOGI(TAG, "novo alvo = %.1f C", setpoint);
         }
         if (botao) {
-            setpoint = SETPOINT_INICIAL; /* toque no botao volta ao alvo padrao */
+            setpoint = SETPOINT_INICIAL;
             sp_sujo = true;
             ultimo_ajuste_us = esp_timer_get_time();
             buzzer_bip(20); vTaskDelay(pdMS_TO_TICKS(60)); buzzer_bip(20);
             ESP_LOGI(TAG, "botao: alvo resetado para %.1f C", setpoint);
         }
 
-        /* Salva o alvo na NVS ~2 s apos a ultima mudanca. */
         if (sp_sujo && esp_timer_get_time() - ultimo_ajuste_us > 2000000) {
             persistencia_salvar_setpoint(setpoint);
             sp_sujo = false;
         }
 
-        /* Presenca -> Auto-Away. Acende o LED de bordo enquanto detecta. */
         int64_t agora = esp_timer_get_time();
         bool movimento = pir_movimento();
         gpio_set_level(PINO_LED_PRESENCA, movimento);
         if (movimento) ultimo_movimento_us = agora;
         bool ausente = (agora - ultimo_movimento_us) > (int64_t)TIMEOUT_AUSENTE_MS * 1000;
 
-        /* Bip ao entrar/sair do modo ausente (Auto-Away). */
         if (ausente != ausente_ant) {
             ausente_ant = ausente;
             buzzer_bip(40);
             ESP_LOGI(TAG, "%s", ausente ? "-> modo AUSENTE (eco)" : "-> presenca detectada");
         }
 
-        /* Le a temperatura atual e decide o estado. */
         float temp;
         xSemaphoreTake(mutex_estado, portMAX_DELAY);
         temp = sis.temp;
@@ -286,8 +251,6 @@ static void task_comunicacao(void *arg)
     }
 }
 
-/* ---------- inicializacao ---------- */
-
 void app_main(void)
 {
     i2c_master_bus_config_t bus_cfg = {
@@ -311,7 +274,7 @@ void app_main(void)
     gpio_reset_pin(PINO_LED_PRESENCA);
     gpio_set_direction(PINO_LED_PRESENCA, GPIO_MODE_OUTPUT);
     persistencia_init();
-    conect_init(); /* Wi-Fi + MQTT (assincrono; cria suas proprias tasks) */
+    conect_init();
 
     mutex_estado = xSemaphoreCreateMutex();
     mutex_i2c = xSemaphoreCreateMutex();
@@ -324,7 +287,6 @@ void app_main(void)
     sis.estado = CONFORTO;
     sis.ausente = false;
 
-    /* Tasks da aplicacao no core 1 (o core 0 fica para a pilha de rede). */
     xTaskCreatePinnedToCore(task_controle,    "controle", 4096, NULL, 7, NULL, 1);
     xTaskCreatePinnedToCore(task_entrada,     "entrada",  3072, NULL, 6, NULL, 1);
     xTaskCreatePinnedToCore(task_sensores,    "sensores", 4096, NULL, 5, NULL, 1);

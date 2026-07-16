@@ -15,7 +15,6 @@ static const char *TAG = "conect";
 static esp_mqtt_client_handle_t mqtt;
 static volatile bool online = false;
 
-/* Comando de setpoint recebido da nuvem. */
 static volatile bool tem_novo_sp = false;
 static volatile float novo_sp = 0;
 
@@ -24,12 +23,10 @@ static void wifi_handler(void *arg, esp_event_base_t base, int32_t id, void *dat
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        esp_wifi_connect(); /* reconecta sozinho */
+        esp_wifi_connect();
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *e = (ip_event_got_ip_t *)data;
         ESP_LOGI(TAG, "Wi-Fi conectado! IP: " IPSTR, IP2STR(&e->ip_info.ip));
-        /* Forca DNS publico (8.8.8.8): o hotspot do iPhone as vezes nao
-         * encaminha DNS, o que impede resolver o nome do broker. */
         esp_netif_dns_info_t dns = {0};
         dns.ip.type = ESP_IPADDR_TYPE_V4;
         dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("8.8.8.8");

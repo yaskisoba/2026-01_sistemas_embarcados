@@ -1,7 +1,7 @@
 #include "pir.h"
 #include "driver/gpio.h"
 
-#define PINO_PIR GPIO_NUM_13 /* pull-down interno: sem sinal -> le baixo */
+#define PINO_PIR GPIO_NUM_13
 
 void pir_init(void)
 {
