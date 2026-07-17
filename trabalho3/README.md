@@ -20,6 +20,10 @@ de histerese, sinaliza o estado por **LED RGB** e **buzzer**, detecta **presenç
 para entrar em modo de economia (*Auto-Away*) e exibe tudo em um **display OLED**.
 O último alvo escolhido é preservado em memória não-volátil.
 
+## Vídeo de demonstração
+
+Demonstração completa do funcionamento: **https://youtu.be/tcg-TL9G_tI**
+
 ## Funcionalidades
 
 - **Medição** de temperatura e pressão (BMP280) e de umidade (DHT11).
