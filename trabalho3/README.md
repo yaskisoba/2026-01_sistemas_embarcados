@@ -87,10 +87,6 @@ a temperatura fica próxima do alvo:
 A banda é de **±0,5 °C** no modo normal. No **Auto-Away** (sem presença por 15 s)
 ela alarga para **±3 °C**, fazendo o sistema relaxar o controle e economizar.
 
-> O encoder rotativo também é lido por uma **máquina de estados de quadratura**
-> (algoritmo de Ben Buxton), acionada por **interrupção** e com *debounce*, o que
-> garante exatamente um passo por clique, sem repique do contato.
-
 ## Conectividade (MQTT)
 
 O termostato publica o status e aceita comandos por MQTT usando o broker público
