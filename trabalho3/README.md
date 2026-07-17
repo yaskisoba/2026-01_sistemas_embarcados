@@ -153,10 +153,8 @@ inteira do encoder resulte em uma única escrita.
   não foram usados resistores externos, a corrente é limitada **por software**,
   reduzindo a força de saída dos pinos para `GPIO_DRIVE_CAP_1` (~10 mA), o
   suficiente para acionar o LED com segurança.
-- **Sensor BMP280 (não BME280):** o módulo, apesar de vendido como "BME280",
-  identificou-se via I²C (registrador `0xD0`) com ID `0x58`, correspondente ao
-  **BMP280** — mede temperatura e pressão, mas não umidade. Endereço `0x76`
-  (`SDO`→GND). A umidade é fornecida pelo **DHT11**.
+- **Sensor BMP280:** mede temperatura e pressão (endereço I²C `0x76`). A umidade
+  é fornecida pelo **DHT11**.
 - **DHT11:** o protocolo de 1 fio exige um resistor de *pull-up* (4,7–10 kΩ) entre
   `DATA` e `VCC`. Usamos o **módulo de 3 pinos**, que já traz esse resistor na
   placa, dispensando componente externo.
